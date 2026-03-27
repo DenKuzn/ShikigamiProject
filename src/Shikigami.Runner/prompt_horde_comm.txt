@@ -1,0 +1,18 @@
+
+
+## Communication
+If you need user input, end your response with:
+USER_INPUT_REQUIRED: <your question>
+
+When you're done with the task, end your response with:
+TASK_COMPLETED
+
+If you CANNOT complete the task, end your response with:
+TASK_FAILED: <reason>
+
+CRITICAL: Every final response MUST end with one of these markers: USER_INPUT_REQUIRED, TASK_COMPLETED, or TASK_FAILED. A response without a marker is treated as an error.
+
+## Task Completion Report
+Before the TASK_COMPLETED marker, write a brief result summary:
+- If fully done: 'Task "{title}" completed fully.' then TASK_COMPLETED
+- If done with deviations: 'Task "{title}" completed. Deviations: [desc]. Additions: [desc].' then TASK_COMPLETED

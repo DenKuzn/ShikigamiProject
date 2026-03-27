@@ -18,13 +18,15 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _mcpPollTimer;
 
     private bool _dotOn;
+    private double _logFontSize = 10;
     private int _iteration;
     private int _toolCount;
     private double _totalCost;
     private int _tasksCompleted;
     private bool _running;
-    private string? _prompt;
-    private bool _waitingInput;
+    private string? _originalPrompt;
+    private PromptBuilder? _promptBuilder;
+    private List<Dictionary<string, object>> _allEvents = new();
 
     // Horde mode
     private readonly bool _taskMode;
@@ -60,6 +62,8 @@ public partial class MainWindow : Window
         _mcpPollTimer.Tick += async (_, _) => await PollMessagesAsync();
         _mcpPollTimer.Start();
 
+        LogScroller.PreviewMouseWheel += OnLogMouseWheel;
+
         Loaded += async (_, _) => await StartAsync();
         Closing += (_, _) => Shutdown();
     }
@@ -81,25 +85,31 @@ public partial class MainWindow : Window
             {
                 var resp = await _mcp.RequestAsync("GET", $"/prompts/{_args.PromptId}");
                 if (resp?.TryGetProperty("text", out var tp) == true)
-                    _prompt = tp.GetString();
+                    _originalPrompt = tp.GetString();
             }
-            _prompt ??= _args.Prompt ?? "No prompt provided.";
+            _originalPrompt ??= _args.Prompt ?? "No prompt provided.";
+
+            _promptBuilder = new PromptBuilder(
+                _originalPrompt,
+                mcpPort: _mcp.Port,
+                promptId: _args.PromptId,
+                leadId: _args.LeadId);
 
             await _mcp.RegisterAsync(
                 _args.PromptId ?? "",
                 _args.Agent ?? _args.Model ?? "unknown",
-                _prompt,
+                _originalPrompt,
                 Process.GetCurrentProcess().Id,
                 _args.LeadId);
 
-            AppendLog("[prompt] " + Truncate(_prompt, 200), "prompt");
+            AppendLog("[prompt] " + _promptBuilder.FullPromptDisplay(), "prompt");
             await LaunchPassAsync();
         }
     }
 
     private async Task LaunchPassAsync()
     {
-        if (_prompt == null) return;
+        if (_promptBuilder == null) return;
         _running = true;
         _iteration++;
         StatIteration.Text = _iteration.ToString();
@@ -107,15 +117,19 @@ public partial class MainWindow : Window
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
         await _mcp.UpdateStateAsync("working", $"Iteration {_iteration}");
 
+        var builtPrompt = _promptBuilder.Build(_iteration, _allEvents);
+
         await Task.Run(() =>
         {
-            var result = _cli.Run(_prompt!, (type, data) =>
+            var result = _cli.Run(builtPrompt, (type, data) =>
             {
                 Dispatcher.Invoke(() => HandleEvent(type, data));
             });
 
             Dispatcher.Invoke(() =>
             {
+                _allEvents.AddRange(result.Events);
+
                 if (result.Cost.HasValue)
                 {
                     _totalCost += result.Cost.Value;
@@ -165,7 +179,8 @@ public partial class MainWindow : Window
         AppendLog($"[horde] Task: {title}", "task");
         await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "working", $"Task: {title}");
 
-        _prompt = $"Task: {title}\n\n{description}";
+        var taskPrompt = PromptBuilder.BuildTaskPrompt(
+            title!, description!, _mcp.Port!.Value, agentId, _args.PoolId!, _args.LeadId);
         _running = true;
         _iteration++;
         StatIteration.Text = _iteration.ToString();
@@ -174,7 +189,7 @@ public partial class MainWindow : Window
 
         await Task.Run(() =>
         {
-            var result = _cli.Run(_prompt, (type, data) =>
+            var result = _cli.Run(taskPrompt, (type, data) =>
             {
                 Dispatcher.Invoke(() => HandleEvent(type, data));
             });
@@ -297,6 +312,15 @@ public partial class MainWindow : Window
         InputBox.Clear();
         // TODO: Feed input back to CLI process (USER_INPUT_REQUIRED protocol)
         AppendLog($"  [input] {text}", "text");
+    }
+
+    private void OnLogMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+
+        _logFontSize = Math.Clamp(_logFontSize + (e.Delta > 0 ? 1 : -1), 6, 30);
+        LogBox.FontSize = _logFontSize;
+        e.Handled = true;
     }
 
     private void Shutdown()

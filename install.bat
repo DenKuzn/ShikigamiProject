@@ -21,12 +21,12 @@ if exist "%MCP_ROOT%\Runner" rmdir /s /q "%MCP_ROOT%\Runner"
 mkdir "%MCP_ROOT%\Server" 2>nul
 mkdir "%MCP_ROOT%\Runner" 2>nul
 
-:: Copy files
+:: Copy files (robocopy /MIR = mirror, reliable with all file types)
 echo [Shikigami] Copying Server...
-xcopy "%BUILD%\Server\*" "%MCP_ROOT%\Server\" /s /e /q /y >nul
+robocopy "%BUILD%\Server" "%MCP_ROOT%\Server" /MIR /NJH /NJS /NP /NFL /NDL >nul
 
 echo [Shikigami] Copying Runner...
-xcopy "%BUILD%\Runner\*" "%MCP_ROOT%\Runner\" /s /e /q /y >nul
+robocopy "%BUILD%\Runner" "%MCP_ROOT%\Runner" /MIR /NJH /NJS /NP /NFL /NDL >nul
 
 echo.
 echo [Shikigami] Installation complete:

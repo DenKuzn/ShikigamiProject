@@ -1,0 +1,9 @@
+
+## MCP Connection
+- **Port**: {port}
+- **Your Agent ID**: {agent_id}
+- **Your Lead ID**: {lead_id}
+- **Pool ID**: {pool_id}
+- **Send message**: POST http://127.0.0.1:{port}/pools/{pool_id}/messages/send
+  Body: {"sender_id":"{agent_id}","recipient_id":"<target>","text":"<message>"}
+- **Check messages**: GET http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}

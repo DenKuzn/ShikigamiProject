@@ -3,6 +3,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Shikigami.Core.State;
+using Forms = System.Windows.Forms;
 
 namespace Shikigami.Server.Ui;
 
@@ -11,6 +12,7 @@ public partial class StatusWindow : Window
     private readonly ShikigamiState _state;
     private readonly DispatcherTimer _updateTimer;
     private readonly DispatcherTimer _dotTimer;
+    private readonly Forms.NotifyIcon _trayIcon;
     private bool _dotOn;
 
     // Brushes for agent list
@@ -27,6 +29,20 @@ public partial class StatusWindow : Window
         InitializeComponent();
         _state = state;
 
+        // Window icon
+        Icon = EmojiIcon.CreateWpfIcon();
+
+        // System tray
+        _trayIcon = new Forms.NotifyIcon
+        {
+            Icon = EmojiIcon.CreateDrawingIcon(),
+            Text = "ShikigamiMCP",
+            Visible = false,
+        };
+        _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+        _trayIcon.ContextMenuStrip = new Forms.ContextMenuStrip();
+        _trayIcon.ContextMenuStrip.Items.Add("Show Dashboard", null, (_, _) => ShowFromTray());
+
         // Dot pulse
         _dotTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
         _dotTimer.Tick += (_, _) =>
@@ -41,9 +57,30 @@ public partial class StatusWindow : Window
         _updateTimer.Tick += (_, _) => Refresh();
         _updateTimer.Start();
 
-        Closing += (_, e) => { e.Cancel = true; Hide(); };
+        Closing += (_, e) =>
+        {
+            e.Cancel = true;
+            HideToTray();
+        };
 
         Refresh();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        _trayIcon.Visible = true;
+    }
+
+    private void ShowFromTray()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
+            _trayIcon.Visible = false;
+        });
     }
 
     private void Refresh()
@@ -71,6 +108,9 @@ public partial class StatusWindow : Window
         foreach (var pool in _state.Pools.Values)
             billed += pool.Agents.Values.Count(a => a.CostUsd > 0);
         CostDetailLabel.Text = billed > 0 ? $"{billed} shikigami billed" : "";
+
+        // Tray tooltip
+        _trayIcon.Text = $"ShikigamiMCP :{_state.HttpPort}  |  {active.Count} active  |  ${_state.TotalCost:F2}";
 
         // Pools
         if (_state.Pools.IsEmpty)
@@ -154,7 +194,7 @@ public partial class StatusWindow : Window
         {
             Text = text,
             Foreground = fg,
-            FontFamily = new FontFamily("Consolas"),
+            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
             FontSize = size,
             FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
         };
@@ -162,7 +202,7 @@ public partial class StatusWindow : Window
 
     private static SolidColorBrush Frozen(string hex)
     {
-        var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        var b = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex));
         b.Freeze();
         return b;
     }

@@ -1,0 +1,28 @@
+## MCP Connection
+- **Port**: {port}
+- **Your Agent ID**: {agent_id}
+- **Your Lead ID**: {lead_id}
+
+### Send message
+Use Python (curl breaks Unicode on Windows). Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID.
+```bash
+python -c "
+import urllib.request, json
+data = json.dumps({'sender_id':'{agent_id}','recipient_id':'{lead_id}','text':'YOUR_MESSAGE'}).encode('utf-8')
+req = urllib.request.Request('http://127.0.0.1:{port}/messages/send', data=data, headers={'Content-Type':'application/json'})
+print(urllib.request.urlopen(req).read().decode())
+"
+```
+
+### Check your messages
+`curl -s http://127.0.0.1:{port}/messages/{agent_id}` — returns JSON array, messages deleted after reading.
+
+### Discover other agents
+`curl -s http://127.0.0.1:{port}/agents` — returns `[{"id","name","agent_type","task"}]`. Use `id` as `recipient_id`.
+
+### Completion report (MANDATORY)
+Before finishing (AGENT_COMPLETED), send a brief report to `{lead_id}` (what was done + problems, under 500 chars). No exceptions.
+
+### Boundaries
+You CAN: send/check messages, discover agents. You CANNOT: use MCP tools (`mcp__ShikigamiMCP__*`), read other agents' messages, register/unregister agents.
+PREFER `USER_INPUT_REQUIRED` over messaging for blocking questions — the runner handles re-launch with the answer automatically.

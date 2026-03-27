@@ -52,6 +52,7 @@ ShikigamiProject.sln
 │   ├── Shikigami.Server/            — Console app (.NET 9)
 │   │   ├── Mcp/                     — MCP stdio transport + tool definitions
 │   │   ├── Http/                    — REST API controllers for shikigami
+│   │   ├── Ui/                      — Status Dashboard (WPF window + tray icon)
 │   │   ├── Program.cs               — Entry point: wires MCP + HTTP + dashboard
 │   │   └── Shikigami.Server.csproj
 │   │
@@ -60,6 +61,7 @@ ShikigamiProject.sln
 │       ├── ViewModels/              — MVVM view models
 │       ├── Services/                — CLI runner, MCP HTTP client, prompt builder
 │       ├── Theme/                   — Deep Space color palette, styles
+│       ├── prompt_*.txt             — Editable prompt templates (copied to output)
 │       └── Shikigami.Runner.csproj
 │
 └── tests/
@@ -79,7 +81,7 @@ Shikigami.Server (console process)
     ├── MCP tools → create/list/message/cost shikigami
     ├── HTTP REST server (localhost, dynamic port) → shikigami registration, state, messaging
     ├── PID monitor → detects dead shikigami every 15s
-    └── Status dashboard → WPF window in separate thread
+    └── Status dashboard → WPF window in separate thread (🐇 tray icon when minimized)
          │
          │ [HTTP REST — localhost:{port}]
          ▼
@@ -247,6 +249,56 @@ dotnet run --project src/Shikigami.Runner -- --prompt-id <id> --mcp-port <port> 
 ```bash
 dotnet test
 ```
+
+---
+
+## Prompt Templates
+
+Runner loads prompt templates from `.txt` files next to its executable. If a file is missing, a built-in default is used. Placeholders are substituted at runtime.
+
+| File | Purpose | Placeholders |
+|---|---|---|
+| `prompt_comm.txt` | Communication directive (prompt mode) | — |
+| `prompt_horde_comm.txt` | Communication directive (horde mode) | `{title}` |
+| `prompt_mcp_header.txt` | MCP connection header (prompt mode) | `{port}`, `{agent_id}`, `{lead_id}` |
+| `prompt_pool_mcp_header.txt` | MCP connection header (horde mode) | `{port}`, `{agent_id}`, `{lead_id}`, `{pool_id}` |
+
+Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/` to customize prompts without recompilation.
+
+---
+
+## Implementation Status
+
+### Done
+| Feature | Details |
+|---|---|
+| Solution structure | 3 projects: Core, Server, Runner |
+| Models & State | AgentRecord, PoolRecord, TaskRecord, MessageRecord, PromptRecord, thread-safe ShikigamiState |
+| MCP Server | 18 MCP tools via stdio JSON-RPC (ModelContextProtocol SDK) |
+| HTTP REST API | 21 endpoints (agent + pool), full compatibility with Python original |
+| PID Monitor | Background task, checks every 15s, marks dead agents |
+| Pool Management | Validate, create, get available task, cascade failure, reopen dependents, completion check |
+| Launch Service | Starts Runner process for prompt-mode and horde-mode agents |
+| Runner CLI | Launches `claude` CLI, parses stream-json events, UTF-8 encoding |
+| Runner GUI | Deep Space theme, header with dot pulse, stats bar, scrollable log, input panel |
+| Status Dashboard | WPF window with live stats (agents, prompts, msgs, results, logs, trash), cost banner, pool section |
+| Tray Icon | 🐇 system tray when dashboard is closed, double-click to restore |
+| PromptBuilder | MCP header + communication directives, external template files, prompt/horde modes |
+| Horde Mode | Task polling, dispatch, complete/fail reporting, pool lifecycle |
+| Font Zoom | Ctrl + mouse wheel in Runner log area (6–30px) |
+| Build Scripts | `build-shipping.bat` (Release), `build-debug.bat` (Debug), no .pdb in Release |
+| Install Script | `install.bat` — robocopy to `~/.claude/MCPs/ShikigamiMCP/`, manual MCP registration hint |
+
+### TODO
+| Feature | Details |
+|---|---|
+| USER_INPUT_REQUIRED protocol | Show input panel, wait for user input, re-launch CLI with answer |
+| Iteration loop (multi-pass) | Re-launch CLI on message from lead or after USER_INPUT_REQUIRED |
+| Idle mode | AGENT_IDLE marker: keep Runner alive, wait for new messages, auto-close timer |
+| CleanContext | Format and clean event log before submitting to server (Python context.py) |
+| Horde idle/backoff | Proper polling with backoff when tasks are blocked, idle state |
+| Runner window icon | 🐇 icon on Runner window (currently only on Dashboard) |
+| Prompt editor button | UI button to open prompt template files in external editor |
 
 ---
 

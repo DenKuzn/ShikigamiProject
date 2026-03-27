@@ -1,0 +1,13 @@
+
+
+## Communication
+If you need user input, end your response with:
+USER_INPUT_REQUIRED: <your question>
+
+If you completed your task but want to remain available for follow-up instructions (idle mode), end your response with:
+AGENT_IDLE
+
+If you completed your task and no follow-up is needed, end your response with:
+AGENT_COMPLETED
+
+CRITICAL: Every final response MUST end with one of these markers: USER_INPUT_REQUIRED, AGENT_IDLE, or AGENT_COMPLETED. A response without a marker is treated as an error.
