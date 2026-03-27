@@ -4,18 +4,16 @@
 - **Your Lead ID**: {lead_id}
 
 ### Send message
-Use Python (curl breaks Unicode on Windows). Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID.
-```bash
-python -c "
-import urllib.request, json
-data = json.dumps({'sender_id':'{agent_id}','recipient_id':'{lead_id}','text':'YOUR_MESSAGE'}).encode('utf-8')
-req = urllib.request.Request('http://127.0.0.1:{port}/messages/send', data=data, headers={'Content-Type':'application/json'})
-print(urllib.request.urlopen(req).read().decode())
-"
+CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.
+Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID. Replace YOUR_MESSAGE with your text.
+```powershell
+powershell -NoProfile -Command "$b = @{sender_id='{agent_id}'; recipient_id='{lead_id}'; text='YOUR_MESSAGE'} | ConvertTo-Json; Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/send' -Method POST -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))"
 ```
 
 ### Check your messages
-`curl -s http://127.0.0.1:{port}/messages/{agent_id}` — returns JSON array, messages deleted after reading.
+```powershell
+powershell -NoProfile -Command "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/{agent_id}'"
+```
 
 ### Discover other agents
 `curl -s http://127.0.0.1:{port}/agents` — returns `[{"id","name","agent_type","task"}]`. Use `id` as `recipient_id`.

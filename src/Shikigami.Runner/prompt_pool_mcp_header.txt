@@ -4,6 +4,14 @@
 - **Your Agent ID**: {agent_id}
 - **Your Lead ID**: {lead_id}
 - **Pool ID**: {pool_id}
-- **Send message**: POST http://127.0.0.1:{port}/pools/{pool_id}/messages/send
-  Body: {"sender_id":"{agent_id}","recipient_id":"<target>","text":"<message>"}
-- **Check messages**: GET http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}
+
+### Send message
+CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.
+```powershell
+powershell -NoProfile -Command "$b = @{sender_id='{agent_id}'; recipient_id='<target>'; text='YOUR_MESSAGE'} | ConvertTo-Json; Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/pools/{pool_id}/messages/send' -Method POST -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))"
+```
+
+### Check messages
+```powershell
+powershell -NoProfile -Command "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}'"
+```

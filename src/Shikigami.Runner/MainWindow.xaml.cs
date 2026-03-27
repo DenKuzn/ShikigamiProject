@@ -306,11 +306,43 @@ public partial class MainWindow : Window
                 ? await _mcp.PoolCheckMessagesAsync(_args.PoolId!, _args.AgentId ?? _args.PromptId!)
                 : await _mcp.CheckMessagesAsync(_args.PromptId ?? "");
 
+            if (messages.Count == 0) return;
+
+            // Format and display all messages
+            var parts = new List<string>();
             foreach (var msg in messages)
             {
                 var sender = msg.TryGetProperty("sender_id", out var s) ? s.GetString() : "?";
                 var text = msg.TryGetProperty("text", out var t) ? t.GetString() : "";
-                AppendLog($"  [msg from {sender}] {text}", "sys");
+                parts.Add($"[Message from {sender}]: {text}");
+            }
+            var combined = string.Join("\n", parts);
+
+            var sep = new string('\u2500', 54);
+            AppendLog(sep, "sys");
+            AppendLog("  \u2709 MESSAGE RECEIVED:", "task");
+            AppendLog($"  {combined}", "text");
+            AppendLog(sep, "sys");
+
+            // If not running CLI → inject message and re-launch
+            if (!_running)
+            {
+                _allEvents.Add(new Dictionary<string, object>
+                {
+                    ["type"] = "mcp_message",
+                    ["text"] = combined,
+                    ["time"] = DateTime.Now.ToString("HH:mm:ss"),
+                });
+
+                // Cancel input wait if active
+                if (_waitingInput)
+                {
+                    _waitingInput = false;
+                    InputPanel.Visibility = Visibility.Collapsed;
+                    InputBox.Clear();
+                }
+
+                await LaunchPassAsync();
             }
         }
         catch { /* polling failure is not critical */ }

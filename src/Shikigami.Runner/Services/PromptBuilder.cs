@@ -66,26 +66,47 @@ public sealed class PromptBuilder
     /// <summary>
     /// Build the prompt for a given pass iteration (prompt mode).
     /// </summary>
-    public string Build(int iteration, List<Dictionary<string, object>>? cleanContextEntries = null)
+    public string Build(int iteration, List<Dictionary<string, object>>? allEvents = null)
     {
         var mcp = McpHeader();
         var suffix = _skipCommDirective ? "" : _commDirective;
 
-        if (iteration == 1 || cleanContextEntries == null || cleanContextEntries.Count == 0)
+        if (iteration == 1 || allEvents == null || allEvents.Count == 0)
             return mcp + $"## Your task:\n{_originalPrompt}" + suffix;
 
-        var ctxJson = JsonSerializer.Serialize(cleanContextEntries,
-            new JsonSerializerOptions { WriteIndented = false });
+        // Extract user inputs and messages — present them prominently
+        var interactions = new List<string>();
+        foreach (var evt in allEvents)
+        {
+            var type = evt.TryGetValue("type", out var t) ? t.ToString() : null;
+            var text = evt.TryGetValue("text", out var tx) ? tx.ToString() : null;
+            if (string.IsNullOrEmpty(text)) continue;
+            if (type == "user_input")
+                interactions.Add($"- User answered: {text}");
+            else if (type == "mcp_message")
+                interactions.Add($"- {text}");
+        }
 
         var parts = new List<string>
         {
             mcp + $"## Your task:\n{_originalPrompt}",
-            $"## Full History (all previous passes)\n```json\n{ctxJson}\n```",
-            "Continue from where you left off. " +
-            "Do NOT re-ask answered questions or re-read files you already have in history.",
         };
+
+        if (interactions.Count > 0)
+        {
+            parts.Add("## New Information (IMPORTANT — read and act on this)\n" +
+                       string.Join("\n", interactions));
+            parts.Add("Continue from where you left off. Act on the new information above. " +
+                       "Do NOT repeat questions that have been answered. Do NOT re-read files you already read.");
+        }
+        else
+        {
+            parts.Add("Continue from where you left off. " +
+                       "Do NOT re-ask answered questions or re-read files you already have in history.");
+        }
+
         if (!_skipCommDirective)
-            parts.Add(_commDirective);
+            parts.Add(suffix);
         return string.Join("\n\n", parts);
     }
 
@@ -162,17 +183,17 @@ public sealed class PromptBuilder
         "- **Your Agent ID**: {agent_id}\n" +
         "- **Your Lead ID**: {lead_id}\n\n" +
         "### Send message\n" +
-        "Use Python (curl breaks Unicode on Windows). Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID.\n" +
-        "```bash\n" +
-        "python -c \"\n" +
-        "import urllib.request, json\n" +
-        "data = json.dumps({'sender_id':'{agent_id}','recipient_id':'{lead_id}','text':'YOUR_MESSAGE'}).encode('utf-8')\n" +
-        "req = urllib.request.Request('http://127.0.0.1:{port}/messages/send', data=data, headers={'Content-Type':'application/json'})\n" +
-        "print(urllib.request.urlopen(req).read().decode())\n" +
-        "\"\n" +
+        "CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.\n" +
+        "Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID. Replace YOUR_MESSAGE with your text.\n" +
+        "```powershell\n" +
+        "powershell -NoProfile -Command \"$b = @{sender_id='{agent_id}'; recipient_id='{lead_id}'; text='YOUR_MESSAGE'} | ConvertTo-Json; " +
+        "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/send' -Method POST " +
+        "-ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))\"\n" +
         "```\n\n" +
         "### Check your messages\n" +
-        "`curl -s http://127.0.0.1:{port}/messages/{agent_id}` — returns JSON array, messages deleted after reading.\n\n" +
+        "```powershell\n" +
+        "powershell -NoProfile -Command \"Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/{agent_id}'\"\n" +
+        "```\n\n" +
         "### Discover other agents\n" +
         "`curl -s http://127.0.0.1:{port}/agents` — returns `[{\"id\",\"name\",\"agent_type\",\"task\"}]`. Use `id` as `recipient_id`.\n\n" +
         "### Completion report (MANDATORY)\n" +
