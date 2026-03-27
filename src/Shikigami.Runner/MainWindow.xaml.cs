@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -18,6 +19,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _mcpPollTimer;
 
     private bool _dotOn;
+    private bool _autoScroll = true;
     private double _logFontSize = 10;
     private int _iteration;
     private int _toolCount;
@@ -68,6 +70,7 @@ public partial class MainWindow : Window
         _mcpPollTimer.Start();
 
         LogScroller.PreviewMouseWheel += OnLogMouseWheel;
+        LogScroller.ScrollChanged += OnLogScrollChanged;
 
         Loaded += async (_, _) => await StartAsync();
         Closing += (_, _) => Shutdown();
@@ -294,7 +297,8 @@ public partial class MainWindow : Window
             }
         };
         para.Inlines.Add(run);
-        LogScroller.ScrollToEnd();
+        if (_autoScroll)
+            LogScroller.ScrollToEnd();
     }
 
     private async Task PollMessagesAsync()
@@ -411,6 +415,12 @@ public partial class MainWindow : Window
 
         _waitingInput = false;
         await LaunchPassAsync();
+    }
+
+    private void OnLogScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // At bottom (within 10px tolerance) → enable auto-scroll
+        _autoScroll = LogScroller.VerticalOffset + LogScroller.ViewportHeight >= LogScroller.ExtentHeight - 10;
     }
 
     private void OnLogMouseWheel(object sender, MouseWheelEventArgs e)

@@ -283,21 +283,25 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/` to customize prompts w
 | Runner GUI | Deep Space theme, header with dot pulse, stats bar, scrollable log, input panel |
 | Status Dashboard | WPF window with live stats (agents, prompts, msgs, results, logs, trash), cost banner, pool section |
 | Tray Icon | 🐇 system tray when dashboard is closed, double-click to restore |
+| Runner Window Icon | 🐇 icon on Runner window title bar (pure WPF rendering, no WinForms) |
 | PromptBuilder | MCP header + communication directives, external template files, prompt/horde modes |
 | Horde Mode | Task polling, dispatch, complete/fail reporting, pool lifecycle |
 | Font Zoom | Ctrl + mouse wheel in Runner log area (6–30px) |
 | Build Scripts | `build-shipping.bat` (Release), `build-debug.bat` (Debug), no .pdb in Release |
 | Install Script | `install.bat` — robocopy to `~/.claude/MCPs/ShikigamiMCP/`, manual MCP registration hint |
+| USER_INPUT_REQUIRED | Detects marker in CLI result, shows input panel, amber dot pulse, re-launches CLI with answer |
+| Iteration loop | Re-launches CLI when message arrives (from any agent) while not running; context preserved between iterations |
+| Smart auto-scroll | Terminal-like: scrolling up freezes position, returning to bottom resumes auto-scroll |
+| Multiline input | Input panel supports Ctrl+Enter for newlines, Enter to send |
+| PowerShell messaging | Prompt templates use PowerShell instead of curl/Python for Unicode-safe HTTP messaging |
+| Text wrapping | Log area wraps long lines by word instead of extending horizontally |
 
 ### TODO
 | Feature | Details |
 |---|---|
-| USER_INPUT_REQUIRED protocol | Show input panel, wait for user input, re-launch CLI with answer |
-| Iteration loop (multi-pass) | Re-launch CLI on message from lead or after USER_INPUT_REQUIRED |
 | Idle mode | AGENT_IDLE marker: keep Runner alive, wait for new messages, auto-close timer |
 | CleanContext | Format and clean event log before submitting to server (Python context.py) |
 | Horde idle/backoff | Proper polling with backoff when tasks are blocked, idle state |
-| Runner window icon | 🐇 icon on Runner window (currently only on Dashboard) |
 | Prompt editor button | UI button to open prompt template files in external editor |
 
 ---
