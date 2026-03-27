@@ -62,7 +62,7 @@
                          FontFamily="Consolas" FontSize="10" IsReadOnly="True" BorderThickness="0"
                          Padding="14,4" VerticalScrollBarVisibility="Disabled">
                 <RichTextBox.Document>
-                    <FlowDocument PageWidth="5000"/>
+                    <FlowDocument/>
                 </RichTextBox.Document>
             </RichTextBox>
         </ScrollViewer>
@@ -77,7 +77,10 @@
                 <TextBox x:Name="InputBox" Grid.Column="0" Background="#0f1420" Foreground="#e4eaf4"
                          FontFamily="Consolas" FontSize="11" Padding="8,6" BorderThickness="1"
                          BorderBrush="#005c4d" CaretBrush="#00e5c0"
-                         KeyDown="InputBox_KeyDown"/>
+                         AcceptsReturn="False" TextWrapping="Wrap"
+                         MinHeight="28" MaxHeight="120"
+                         VerticalScrollBarVisibility="Auto"
+                         PreviewKeyDown="InputBox_PreviewKeyDown"/>
                 <Button x:Name="SendButton" Grid.Column="1" Content="Send" Margin="8,0,0,0"
                         Background="#005c4d" Foreground="#00e5c0" FontFamily="Bahnschrift"
                         Padding="16,6" BorderThickness="0" Click="SendButton_Click"/>

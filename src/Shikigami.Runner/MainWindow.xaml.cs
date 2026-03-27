@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private double _totalCost;
     private int _tasksCompleted;
     private bool _running;
+    private bool _waitingInput;
     private string? _originalPrompt;
     private PromptBuilder? _promptBuilder;
     private List<Dictionary<string, object>> _allEvents = new();
@@ -44,6 +45,7 @@ public partial class MainWindow : Window
         var name = args.Agent ?? args.Model ?? "shikigami";
         Title = $"\u2b21 {name}";
         HeaderName.Text = name;
+        Icon = EmojiIcon.Create();
 
         if (_taskMode)
             TasksPanel.Visibility = Visibility.Visible;
@@ -53,7 +55,10 @@ public partial class MainWindow : Window
         _dotTimer.Tick += (_, _) =>
         {
             _dotOn = !_dotOn;
-            DotIndicator.Fill = _dotOn ? DeepSpaceTheme.TealBrush : DeepSpaceTheme.TealDimBrush;
+            if (_waitingInput)
+                DotIndicator.Fill = _dotOn ? DeepSpaceTheme.AmberBrush : DeepSpaceTheme.AmberDimBrush;
+            else
+                DotIndicator.Fill = _dotOn ? DeepSpaceTheme.TealBrush : DeepSpaceTheme.TealDimBrush;
         };
         _dotTimer.Start();
 
@@ -138,6 +143,19 @@ public partial class MainWindow : Window
                 }
 
                 _running = false;
+
+                // Check for USER_INPUT_REQUIRED marker
+                if (result.ResultText.Contains("USER_INPUT_REQUIRED"))
+                {
+                    var marker = "USER_INPUT_REQUIRED:";
+                    var idx = result.ResultText.LastIndexOf(marker);
+                    var question = idx >= 0
+                        ? result.ResultText[(idx + marker.Length)..].Trim()
+                        : "";
+                    AskUser(question);
+                    return;
+                }
+
                 HeaderStatus.Text = "completed";
                 HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
                 AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
@@ -298,20 +316,69 @@ public partial class MainWindow : Window
         catch { /* polling failure is not critical */ }
     }
 
-    private void InputBox_KeyDown(object sender, KeyEventArgs e)
+    private void AskUser(string question)
     {
-        if (e.Key == Key.Enter) SendInput();
+        _waitingInput = true;
+        var sep = new string('\u2500', 54);
+        AppendLog(sep, "sys");
+        AppendLog("  AGENT ASKS:", "task");
+        if (!string.IsNullOrEmpty(question))
+            AppendLog($"  {question}", "task");
+        AppendLog(sep, "sys");
+
+        HeaderStatus.Text = "awaiting input";
+        HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
+        _ = _mcp.UpdateStateAsync("waiting", $"USER_INPUT_REQUIRED: {Truncate(question, 100)}");
+
+        InputPanel.Visibility = Visibility.Visible;
+        InputBox.Focus();
+    }
+
+    private void InputBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+            {
+                // Ctrl+Enter → insert newline at caret
+                var caret = InputBox.CaretIndex;
+                InputBox.Text = InputBox.Text.Insert(caret, Environment.NewLine);
+                InputBox.CaretIndex = caret + Environment.NewLine.Length;
+                e.Handled = true;
+            }
+            else
+            {
+                // Enter → send
+                SendInput();
+                e.Handled = true;
+            }
+        }
     }
 
     private void SendButton_Click(object sender, RoutedEventArgs e) => SendInput();
 
-    private void SendInput()
+    private async void SendInput()
     {
         var text = InputBox.Text.Trim();
         if (string.IsNullOrEmpty(text)) return;
         InputBox.Clear();
-        // TODO: Feed input back to CLI process (USER_INPUT_REQUIRED protocol)
-        AppendLog($"  [input] {text}", "text");
+        InputPanel.Visibility = Visibility.Collapsed;
+
+        var sep = new string('\u2500', 54);
+        AppendLog(sep, "sys");
+        AppendLog("  YOUR ANSWER:", "result");
+        AppendLog($"  {text}", "result");
+        AppendLog(sep, "sys");
+
+        _allEvents.Add(new Dictionary<string, object>
+        {
+            ["type"] = "user_input",
+            ["text"] = text,
+            ["time"] = DateTime.Now.ToString("HH:mm:ss"),
+        });
+
+        _waitingInput = false;
+        await LaunchPassAsync();
     }
 
     private void OnLogMouseWheel(object sender, MouseWheelEventArgs e)
