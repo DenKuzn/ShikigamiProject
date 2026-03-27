@@ -1,0 +1,216 @@
+using System.Text.Json;
+using Shikigami.Core.Models;
+using Shikigami.Core.Services;
+using Shikigami.Core.State;
+
+namespace Shikigami.Server.Http;
+
+/// <summary>
+/// Minimal API endpoints for prompt-mode shikigami: registration, state, messaging, results.
+/// </summary>
+public static class AgentEndpoints
+{
+    public static void MapAgentEndpoints(this WebApplication app, ShikigamiState state, LaunchService launcher)
+    {
+        app.MapPost("/agents/register", async (HttpContext ctx) =>
+        {
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            string[] required = ["prompt_id", "name", "task", "parent_id", "pid", "agent_type"];
+            var missing = required.Where(f => !data.TryGetProperty(f, out _)).ToList();
+            if (missing.Count > 0)
+                return Results.Json(new { error = $"Missing fields: {string.Join(", ", missing)}" }, statusCode: 400);
+
+            var agentId = data.GetProperty("prompt_id").GetString()!;
+            if (state.Agents.TryGetValue(agentId, out var existing) && existing.Active)
+                return Results.Json(new { error = $"Agent with id '{agentId}' is already active" }, statusCode: 409);
+
+            var agent = new AgentRecord
+            {
+                Id = agentId,
+                Name = data.GetProperty("name").GetString()!,
+                Task = data.GetProperty("task").GetString()!,
+                ParentId = data.GetProperty("parent_id").GetString()!,
+                Pid = data.GetProperty("pid").GetInt32(),
+                AgentType = data.GetProperty("agent_type").GetString()!,
+            };
+            state.Agents[agentId] = agent;
+            state.Queues[agentId] = new List<MessageRecord>();
+
+            return Results.Json(new { id = agentId });
+        });
+
+        app.MapPost("/agents/{id}/unregister", (string id) =>
+        {
+            if (!state.Agents.ContainsKey(id))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+            state.MarkDead(id);
+            return Results.Json(new { ok = true });
+        });
+
+        app.MapPut("/agents/{id}/state", async (string id, HttpContext ctx) =>
+        {
+            if (!state.Agents.TryGetValue(id, out var agent) || !agent.Active)
+                return Results.Json(new { error = "Agent not found or inactive" }, statusCode: 404);
+
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            if (data.TryGetProperty("status", out var s)) agent.Status = s.GetString();
+            if (data.TryGetProperty("current_step", out var cs)) agent.CurrentStep = cs.GetString();
+            if (data.TryGetProperty("metadata", out var m)) agent.Metadata = m;
+
+            return Results.Json(new { ok = true });
+        });
+
+        app.MapGet("/agents", () =>
+        {
+            var result = state.Agents.Values
+                .Where(a => a.Active)
+                .Select(a => new { id = a.Id, name = a.Name, agent_type = a.AgentType, task = a.Task })
+                .ToList();
+            return Results.Json(result);
+        });
+
+        app.MapPost("/messages/send", async (HttpContext ctx) =>
+        {
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            var senderId = data.GetProperty("sender_id").GetString()!;
+            var recipientId = data.GetProperty("recipient_id").GetString()!;
+            var text = data.GetProperty("text").GetString()!;
+
+            var msg = new MessageRecord { SenderId = senderId, Text = text };
+
+            if (recipientId != "lead"
+                && (!state.Agents.TryGetValue(recipientId, out var recip) || !recip.Active))
+            {
+                state.ToTrash(msg, recipientId, "rejected");
+                return Results.Json(new { error = "Recipient not found" }, statusCode: 404);
+            }
+
+            var queue = state.Queues.GetOrAdd(recipientId, _ => new List<MessageRecord>());
+            lock (queue) queue.Add(msg);
+            return Results.Json(new { ok = true });
+        });
+
+        app.MapGet("/messages/{agentId}", (string agentId) =>
+        {
+            if (agentId != "lead" && (!state.Agents.TryGetValue(agentId, out var a) || !a.Active))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+
+            List<MessageRecord> messages;
+            if (state.Queues.TryGetValue(agentId, out var queue))
+            {
+                lock (queue)
+                {
+                    messages = new List<MessageRecord>(queue);
+                    queue.Clear();
+                }
+            }
+            else
+            {
+                messages = new();
+            }
+
+            foreach (var msg in messages)
+                state.ToTrash(msg, agentId, "read");
+            return Results.Json(messages);
+        });
+
+        app.MapGet("/agents/{id}/state", (string id) =>
+        {
+            if (!state.Agents.TryGetValue(id, out var a))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+            return Results.Json(new { id = a.Id, name = a.Name, active = a.Active, status = a.Status, current_step = a.CurrentStep });
+        });
+
+        app.MapPut("/agents/{id}/result", async (string id, HttpContext ctx) =>
+        {
+            if (!state.Agents.TryGetValue(id, out var agent))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            if (data.TryGetProperty("result", out var r)) agent.Result = r.GetString();
+            if (data.TryGetProperty("event_log", out var el)) agent.EventLog = el;
+
+            return Results.Json(new { ok = true });
+        });
+
+        app.MapPut("/agents/{id}/cost", async (string id, HttpContext ctx) =>
+        {
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            var cost = data.GetProperty("total_cost_usd").GetDouble();
+
+            // Try regular agents first
+            if (state.Agents.TryGetValue(id, out var agent))
+            {
+                var oldCost = agent.CostUsd;
+                agent.CostUsd = cost;
+                state.AddCost(cost - oldCost);
+                return Results.Json(new { ok = true, agent_cost = cost, total_cost = state.TotalCost });
+            }
+
+            // Try pool agents
+            foreach (var pool in state.Pools.Values)
+            {
+                if (pool.Agents.TryGetValue(id, out var poolAgent))
+                {
+                    var oldCost = poolAgent.CostUsd;
+                    poolAgent.CostUsd = cost;
+                    state.AddCost(cost - oldCost);
+                    return Results.Json(new { ok = true, agent_cost = cost, total_cost = state.TotalCost });
+                }
+            }
+
+            return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+        });
+
+        app.MapGet("/prompts/{promptId}", (string promptId) =>
+        {
+            if (!state.Prompts.TryGetValue(promptId, out var prompt))
+                return Results.Json(new { error = "Prompt not found" }, statusCode: 404);
+            return Results.Json(new { id = prompt.Id, text = prompt.Text, created_at = prompt.CreatedAt });
+        });
+
+        app.MapGet("/agents/{id}/wait", async (string id, HttpContext ctx) =>
+        {
+            var timeout = int.Parse(ctx.Request.Query["timeout"].FirstOrDefault() ?? "600");
+            var elapsed = 0;
+            const int interval = 2;
+
+            while (elapsed < timeout)
+            {
+                if (state.Agents.TryGetValue(id, out var agent))
+                {
+                    if (agent.Status is "completed" or "failed")
+                        return Results.Json(new { agent_id = id, status = agent.Status });
+                    if (agent.Status == "idle")
+                        return Results.Json(new { agent_id = id, status = "idle" });
+                    if (!agent.Active && agent.Status == null)
+                        return Results.Json(new { agent_id = id, status = "dead" });
+                }
+                await Task.Delay(interval * 1000, ctx.RequestAborted);
+                elapsed += interval;
+            }
+            return Results.Json(new { agent_id = id, status = "timeout" }, statusCode: 408);
+        });
+
+        // HTTP mirrors of MCP tools
+        app.MapPost("/agents/create", async (HttpContext ctx) =>
+        {
+            var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+            if (!data.TryGetProperty("prompt", out _))
+                return Results.Json(new { error = "Missing required field: prompt" }, statusCode: 400);
+            if (!data.TryGetProperty("lead_id", out _))
+                return Results.Json(new { error = "Missing required field: lead_id" }, statusCode: 400);
+
+            var result = launcher.LaunchPromptAgent(
+                prompt: data.GetProperty("prompt").GetString()!,
+                agentName: data.TryGetProperty("agent_name", out var an) ? an.GetString()! : "",
+                model: data.TryGetProperty("model", out var m) ? m.GetString()! : "",
+                tools: data.TryGetProperty("tools", out var t) ? t.GetString()! : "",
+                workdir: data.TryGetProperty("workdir", out var w) ? w.GetString()! : "",
+                leadId: data.GetProperty("lead_id").GetString()!);
+
+            var status = result.ContainsKey("error") ? 400 : 200;
+            return Results.Json(result, statusCode: status);
+        });
+    }
+}
