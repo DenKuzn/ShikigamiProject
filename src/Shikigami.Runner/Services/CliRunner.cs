@@ -105,7 +105,9 @@ public sealed class CliRunner
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardInputEncoding = System.Text.Encoding.UTF8,
                 StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
             };
             foreach (var arg in args) psi.ArgumentList.Add(arg);
             if (!string.IsNullOrEmpty(_workdir)) psi.WorkingDirectory = _workdir;

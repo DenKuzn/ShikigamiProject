@@ -1,0 +1,136 @@
+<Window x:Class="Shikigami.Server.Ui.StatusWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="&#x2B21; ShikigamiMCP" Width="400" Height="530"
+        ResizeMode="NoResize" Background="#0b0e17"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <!-- Shared font families -->
+        <FontFamily x:Key="FontUi">Bahnschrift</FontFamily>
+        <FontFamily x:Key="FontMono">Consolas</FontFamily>
+
+        <!-- Colors -->
+        <SolidColorBrush x:Key="Bg" Color="#0b0e17"/>
+        <SolidColorBrush x:Key="BgDark" Color="#060a10"/>
+        <SolidColorBrush x:Key="BgSurface" Color="#161c2e"/>
+        <SolidColorBrush x:Key="BgPanel" Color="#0f1420"/>
+        <SolidColorBrush x:Key="Fg" Color="#b8c5d6"/>
+        <SolidColorBrush x:Key="FgDim" Color="#4a5a6e"/>
+        <SolidColorBrush x:Key="FgBright" Color="#e4eaf4"/>
+        <SolidColorBrush x:Key="Teal" Color="#00e5c0"/>
+        <SolidColorBrush x:Key="TealDim" Color="#005c4d"/>
+        <SolidColorBrush x:Key="Cyan" Color="#5ec4ff"/>
+        <SolidColorBrush x:Key="Amber" Color="#e5a000"/>
+        <SolidColorBrush x:Key="AmberDim" Color="#1f1800"/>
+        <SolidColorBrush x:Key="Green" Color="#7dff7d"/>
+        <SolidColorBrush x:Key="Red" Color="#ff5c5c"/>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- ── Header ── -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource BgDark}" Padding="14,10">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="DotIndicator" Width="12" Height="12"
+                             Fill="{StaticResource TealDim}" Margin="0,0,8,0"/>
+                    <StackPanel>
+                        <TextBlock Text="MCP SERVER" FontFamily="{StaticResource FontUi}"
+                                   FontSize="7" Foreground="{StaticResource FgDim}"/>
+                        <TextBlock Text="ShikigamiMCP" FontFamily="{StaticResource FontUi}"
+                                   FontSize="12" FontWeight="Bold" Foreground="{StaticResource Teal}"/>
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock x:Name="PortLabel" Text=":..." FontFamily="{StaticResource FontMono}"
+                           FontSize="14" Foreground="{StaticResource FgDim}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+        <Border DockPanel.Dock="Top" Background="{StaticResource TealDim}" Height="1"/>
+
+        <!-- ── Stats Grid (3x2) ── -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource BgPanel}" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="1"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="1"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="6"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Row 0: AGENTS | PROMPTS | MSGS -->
+                <StackPanel Grid.Row="0" Grid.Column="0">
+                    <TextBlock Text="AGENTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatAgents" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Green}"/>
+                </StackPanel>
+                <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Fill="{StaticResource FgDim}" Width="1"/>
+                <StackPanel Grid.Row="0" Grid.Column="3">
+                    <TextBlock Text="PROMPTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatPrompts" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                </StackPanel>
+                <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="4" Fill="{StaticResource FgDim}" Width="1"/>
+                <StackPanel Grid.Row="0" Grid.Column="6">
+                    <TextBlock Text="MSGS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatMessages" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
+                </StackPanel>
+
+                <!-- Row 2: RESULTS | LOGS | TRASH -->
+                <StackPanel Grid.Row="2" Grid.Column="0">
+                    <TextBlock Text="RESULTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatResults" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Green}"/>
+                </StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="3">
+                    <TextBlock Text="LOGS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatLogs" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                </StackPanel>
+                <StackPanel Grid.Row="2" Grid.Column="6">
+                    <TextBlock Text="TRASH" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
+                    <TextBlock x:Name="StatTrash" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource FgDim}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <Border DockPanel.Dock="Top" Background="{StaticResource BgSurface}" Height="1"/>
+
+        <!-- ── Cost Banner ── -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource AmberDim}" Padding="14,8">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="&#x25C6; SESSION COST" FontFamily="{StaticResource FontUi}"
+                               FontSize="7" Foreground="{StaticResource Amber}"/>
+                    <TextBlock x:Name="CostLabel" Text="$0.00" FontFamily="{StaticResource FontUi}"
+                               FontSize="18" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
+                </StackPanel>
+                <TextBlock x:Name="CostDetailLabel" Text="" FontFamily="{StaticResource FontUi}"
+                           FontSize="8" Foreground="{StaticResource FgDim}"
+                           HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+            </Grid>
+        </Border>
+        <Border DockPanel.Dock="Top" Background="{StaticResource Amber}" Height="1"/>
+
+        <!-- ── Pools section (hidden when empty) ── -->
+        <StackPanel x:Name="PoolsSection" DockPanel.Dock="Top" Visibility="Collapsed">
+            <TextBlock x:Name="PoolsHeader" Text="HORDE POOLS" FontFamily="{StaticResource FontUi}"
+                       FontSize="7" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"/>
+            <ItemsControl x:Name="PoolsList" Margin="8,0"/>
+        </StackPanel>
+
+        <!-- ── Active Agents ── -->
+        <TextBlock DockPanel.Dock="Top" Text="ACTIVE SHIKIGAMI" FontFamily="{StaticResource FontUi}"
+                   FontSize="7" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"/>
+        <RichTextBox x:Name="AgentList" Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
+                     FontFamily="{StaticResource FontMono}" FontSize="9" IsReadOnly="True"
+                     BorderThickness="0" Padding="14,4" VerticalScrollBarVisibility="Auto">
+            <RichTextBox.Document>
+                <FlowDocument PageWidth="5000"/>
+            </RichTextBox.Document>
+        </RichTextBox>
+    </DockPanel>
+</Window>

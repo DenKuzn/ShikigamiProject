@@ -5,6 +5,7 @@ using Shikigami.Core.Services;
 using Shikigami.Core.State;
 using Shikigami.Server.Http;
 using Shikigami.Server.Mcp;
+using Shikigami.Server.Ui;
 
 // ── Shared state ──
 var state = new ShikigamiState();
@@ -30,6 +31,9 @@ httpApp.MapPoolEndpoints(state, poolService, launcher);
 
 await httpApp.StartAsync();
 Console.Error.WriteLine($"[shikigami-mcp] HTTP server listening on 127.0.0.1:{state.HttpPort}");
+
+// ── Start status dashboard (fire-and-forget, daemon thread) ──
+StatusWindowLauncher.Start(state);
 
 // ── Start PID monitor ──
 var cts = new CancellationTokenSource();
