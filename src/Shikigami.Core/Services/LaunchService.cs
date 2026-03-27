@@ -177,28 +177,15 @@ public sealed class LaunchService
 
     private static string? FindRunnerExecutable()
     {
-        // Look for Shikigami.Runner.exe next to the server executable
-        var serverDir = AppContext.BaseDirectory;
-        var runnerPath = Path.Combine(serverDir, "..", "Shikigami.Runner", "Shikigami.Runner.exe");
-        if (File.Exists(runnerPath)) return Path.GetFullPath(runnerPath);
-
-        // Also check same directory (single-publish scenario)
-        runnerPath = Path.Combine(serverDir, "Shikigami.Runner.exe");
-        if (File.Exists(runnerPath)) return runnerPath;
-
-        // Fallback: check PATH
-        var inPath = FindInPath("Shikigami.Runner.exe");
-        return inPath;
-    }
-
-    private static string? FindInPath(string executable)
-    {
-        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathVar.Split(Path.PathSeparator))
+        // Layout: ~/.claude/MCPs/ShikigamiMCP/Server/ (us) and ~/…/Runner/
+        var serverDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        var mcpRoot = Path.GetDirectoryName(serverDir); // ShikigamiMCP/
+        if (mcpRoot != null)
         {
-            var full = Path.Combine(dir, executable);
-            if (File.Exists(full)) return full;
+            var runnerPath = Path.Combine(mcpRoot, "Runner", "Shikigami.Runner.exe");
+            if (File.Exists(runnerPath)) return Path.GetFullPath(runnerPath);
         }
+
         return null;
     }
 

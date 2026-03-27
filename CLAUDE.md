@@ -194,6 +194,31 @@ Fonts: `Bahnschrift` (UI), `Consolas` (monospace).
 
 ---
 
+## Installation Layout
+
+```
+~/.claude/MCPs/ShikigamiMCP/
+├── Server/
+│   └── Shikigami.Server.exe    ← MCP server (registered in Claude CLI)
+└── Runner/
+    └── Shikigami.Runner.exe    ← WPF GUI (launched by Server per shikigami)
+```
+
+Server finds Runner via relative path: `../Runner/Shikigami.Runner.exe` from its own directory.
+
+### Install
+```bash
+build-shipping.bat   # compile Release to Build/Shipping/
+install.bat          # copy to ~/.claude/MCPs/ShikigamiMCP/ + register in Claude CLI
+```
+
+### Registration command (manual)
+```bash
+claude mcp add ShikigamiMCP -- "%USERPROFILE%\.claude\MCPs\ShikigamiMCP\Server\Shikigami.Server.exe"
+```
+
+---
+
 ## Development
 
 ### Prerequisites
@@ -203,10 +228,12 @@ Fonts: `Bahnschrift` (UI), `Consolas` (monospace).
 
 ### Build
 ```bash
-dotnet build
+dotnet build                # quick dev build
+build-shipping.bat          # Release → Build/Shipping/
+build-debug.bat             # Debug → Build/Debug/
 ```
 
-### Run Server
+### Run Server (dev)
 ```bash
 dotnet run --project src/Shikigami.Server
 ```
