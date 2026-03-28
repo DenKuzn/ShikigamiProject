@@ -3,98 +3,299 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Shikigami" Height="680" Width="960"
         MinHeight="440" MinWidth="640"
-        Background="#0b0e17"
-        WindowStartupLocation="CenterScreen">
-    <Grid>
-        <Grid.RowDefinitions>
-            <!-- Header -->
-            <RowDefinition Height="Auto"/>
-            <!-- Stats bar -->
-            <RowDefinition Height="Auto"/>
-            <!-- Log area (expands) -->
-            <RowDefinition Height="*"/>
-            <!-- Input panel (hidden by default) -->
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        Background="#08060F"
+        WindowStartupLocation="CenterScreen"
+>
 
-        <!-- ── Header ── -->
-        <Border Grid.Row="0" Background="#060a10" Padding="14,10">
-            <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="DotIndicator" Width="12" Height="12" Fill="#005c4d" Margin="0,0,8,0"/>
-                    <StackPanel>
-                        <TextBlock Text="SHIKIGAMI" FontFamily="Bahnschrift" FontSize="7" Foreground="#4a5a6e"/>
-                        <TextBlock x:Name="HeaderName" Text="Shikigami" FontFamily="Bahnschrift" FontSize="14" FontWeight="Bold" Foreground="#00e5c0"/>
+    <!-- ═══ Domain Expansion animations ═══ -->
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <!-- Seal slow rotation (1 full turn per 2 minutes) -->
+                    <DoubleAnimation Storyboard.TargetName="SealRotation"
+                        Storyboard.TargetProperty="Angle"
+                        From="0" To="360" Duration="0:2:00"
+                        RepeatBehavior="Forever"/>
+                    <!-- Corner marks breathing pulse -->
+                    <DoubleAnimation Storyboard.TargetName="CornerMarks"
+                        Storyboard.TargetProperty="Opacity"
+                        From="0.55" To="1.0" Duration="0:0:3.5"
+                        AutoReverse="True" RepeatBehavior="Forever"/>
+                    <!-- Cursed energy line shimmer -->
+                    <DoubleAnimation Storyboard.TargetName="CursedEnergyLine"
+                        Storyboard.TargetProperty="Opacity"
+                        From="0.7" To="1.0" Duration="0:0:2"
+                        AutoReverse="True" RepeatBehavior="Forever"/>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+
+    <Grid>
+        <!-- ═══════════════════════════════════════════════════════════
+             Layer 0: Domain Seal watermark (hexagram barrier pattern)
+             ═══════════════════════════════════════════════════════════ -->
+        <Grid IsHitTestVisible="False" Opacity="0.025"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Width="500" Height="500" RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform>
+                <RotateTransform x:Name="SealRotation"/>
+            </Grid.RenderTransform>
+            <!-- Outer barrier ring (dashed) -->
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="1.5" StrokeDashArray="4 2"/>
+            <!-- Middle containment ring -->
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="0.8" Margin="50"/>
+            <!-- Inner core ring -->
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="0.5" Margin="110"/>
+            <!-- Hexagram — triangle up (六芒星) -->
+            <Path Stroke="#8B5CF6" StrokeThickness="0.8" Fill="Transparent"
+                  Data="M 250,65 L 410,340 L 90,340 Z"/>
+            <!-- Hexagram — triangle down -->
+            <Path Stroke="#8B5CF6" StrokeThickness="0.8" Fill="Transparent"
+                  Data="M 250,435 L 90,160 L 410,160 Z"/>
+            <!-- Radiating cross lines -->
+            <Path Stroke="#8B5CF6" StrokeThickness="0.4"
+                  Data="M 250,0 L 250,500 M 0,250 L 500,250 M 73,73 L 427,427 M 427,73 L 73,427"/>
+            <!-- Innermost sanctum -->
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="0.3" Margin="170"/>
+        </Grid>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             Layer 1: Main content
+             ═══════════════════════════════════════════════════════════ -->
+        <Grid>
+            <Grid.RowDefinitions>
+                <!-- Header -->
+                <RowDefinition Height="Auto"/>
+                <!-- Cursed energy separator -->
+                <RowDefinition Height="Auto"/>
+                <!-- Stats bar -->
+                <RowDefinition Height="Auto"/>
+                <!-- Stats separator -->
+                <RowDefinition Height="Auto"/>
+                <!-- Log area (expands) -->
+                <RowDefinition Height="*"/>
+                <!-- Input panel (hidden by default) -->
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- ── Header ── -->
+            <Border Grid.Row="0" Padding="16,14">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#04030A" Offset="0"/>
+                        <GradientStop Color="#0D0A17" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Cursed energy indicator dot -->
+                        <Grid Margin="0,0,12,0">
+                            <Ellipse x:Name="DotIndicator" Width="14" Height="14" Fill="#2D1B69">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect Color="#8B5CF6" BlurRadius="14" ShadowDepth="0" Opacity="0.5"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                        </Grid>
+                        <!-- 呪 curse kanji badge -->
+                        <TextBlock Text="呪" FontFamily="Yu Gothic UI" FontSize="28" FontWeight="Bold"
+                                   Foreground="#8B5CF6" Margin="0,-6,10,0" VerticalAlignment="Center"
+                                   ToolTip="Curse (呪) — cursed energy indicator">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#8B5CF6" BlurRadius="22" ShadowDepth="0" Opacity="0.4"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                        <!-- Agent identity -->
+                        <StackPanel>
+                            <TextBlock Text="式神" FontFamily="Yu Gothic UI" FontSize="10"
+                                       Foreground="#4A3D65" FontWeight="Bold" Margin="0,0,0,-2"
+                                       ToolTip="Shikigami — summoned spirit agent"/>
+                            <TextBlock x:Name="HeaderName" Text="Shikigami"
+                                       FontFamily="Bahnschrift" FontSize="17" FontWeight="Bold"
+                                       Foreground="#A78BFA"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <!-- Buttons row -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <!-- Emergency stop (always visible, disabled when idle) -->
+                            <Button x:Name="StopButton" Content="■ 停止" IsEnabled="False" Opacity="0.25"
+                                    ToolTip="Stop — kill the running CLI process"
+                                    Background="#1A0505" Foreground="#EF4444"
+                                    FontFamily="Yu Gothic UI" FontSize="12" FontWeight="Bold"
+                                    Padding="10,4" Margin="0,0,8,0"
+                                    BorderThickness="1" BorderBrush="#EF4444"
+                                    Cursor="Hand" Click="StopButton_Click"/>
+                            <!-- Domain barrier maintenance toggle -->
+                            <Button x:Name="KeepActiveButton" Content="◎ 結界維持"
+                                    ToolTip="Keep Active — prevents auto-close after completion"
+                                    Background="#0D0A17" Foreground="#4A3D65"
+                                    FontFamily="Yu Gothic UI" FontSize="12" FontWeight="Bold"
+                                    Padding="10,4" Margin="0,0,0,0"
+                                    BorderThickness="1" BorderBrush="#4A3D65"
+                                    Cursor="Hand" Click="KeepActiveButton_Click"/>
+                        </StackPanel>
+                        <!-- Status (separate line, won't shift buttons) -->
+                        <TextBlock x:Name="HeaderStatus" Text="starting"
+                                   FontFamily="Consolas" FontSize="11" Foreground="#4A3D65"
+                                   HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ── Cursed energy flow line (呪力の流れ) ── -->
+            <Border x:Name="CursedEnergyLine" Grid.Row="1" Height="2">
+                <Border.Effect>
+                    <DropShadowEffect Color="#8B5CF6" BlurRadius="8" ShadowDepth="0" Opacity="0.5"/>
+                </Border.Effect>
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#8B5CF6" Offset="0"/>
+                        <GradientStop Color="#2D1B69" Offset="0.3"/>
+                        <GradientStop Color="#EF4444" Offset="0.65"/>
+                        <GradientStop Color="Transparent" Offset="0.9"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
+
+            <!-- ── Stats bar (術式情報) ── -->
+            <Border Grid.Row="2" Background="#0D0A17" Padding="16,8">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="反 復" FontFamily="Yu Gothic UI" FontSize="9"
+                                   Foreground="#4A3D65" FontWeight="Bold"
+                                   ToolTip="Iteration"/>
+                        <TextBlock x:Name="StatIteration" Text="0"
+                                   FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
+                                   Foreground="#8B5CF6"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="術 式" FontFamily="Yu Gothic UI" FontSize="9"
+                                   Foreground="#4A3D65" FontWeight="Bold"
+                                   ToolTip="Techniques (tools used)"/>
+                        <TextBlock x:Name="StatTools" Text="0"
+                                   FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
+                                   Foreground="#60A5FA"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="対 価" FontFamily="Yu Gothic UI" FontSize="9"
+                                   Foreground="#4A3D65" FontWeight="Bold"
+                                   ToolTip="Cost"/>
+                        <TextBlock x:Name="StatCost" Text="$0.00"
+                                   FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
+                                   Foreground="#F59E0B"/>
+                    </StackPanel>
+                    <StackPanel x:Name="TasksPanel" Margin="0,0,28,0" Visibility="Collapsed">
+                        <TextBlock Text="任 務" FontFamily="Yu Gothic UI" FontSize="9"
+                                   Foreground="#4A3D65" FontWeight="Bold"
+                                   ToolTip="Tasks"/>
+                        <TextBlock x:Name="StatTasks" Text="0"
+                                   FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
+                                   Foreground="#34D399"/>
                     </StackPanel>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="KeepActiveButton" Content="KEEP ACTIVE"
-                            Background="#0f1420" Foreground="#4a5a6e" FontFamily="Bahnschrift" FontSize="10"
-                            Padding="10,4" Margin="0,0,8,0" BorderThickness="1" BorderBrush="#4a5a6e"
-                            Cursor="Hand" Click="KeepActiveButton_Click"/>
-                    <Button x:Name="StopButton" Content="■ STOP" Visibility="Collapsed"
-                            Background="#3a1010" Foreground="#ff5c5c" FontFamily="Bahnschrift" FontSize="10"
-                            Padding="10,4" Margin="0,0,12,0" BorderThickness="1" BorderBrush="#ff5c5c"
-                            Cursor="Hand" Click="StopButton_Click"/>
-                    <TextBlock x:Name="HeaderStatus" Text="starting" FontFamily="Consolas" FontSize="11"
-                               Foreground="#4a5a6e"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-        <Border Grid.Row="0" Background="#005c4d" Height="1" VerticalAlignment="Bottom"/>
+            </Border>
 
-        <!-- ── Stats bar ── -->
-        <Border Grid.Row="1" Background="#0f1420" Padding="14,8">
-            <StackPanel Orientation="Horizontal">
-                <StackPanel Margin="0,0,24,0">
-                    <TextBlock Text="ITERATION" FontFamily="Bahnschrift" FontSize="7" Foreground="#4a5a6e"/>
-                    <TextBlock x:Name="StatIteration" Text="0" FontFamily="Bahnschrift" FontSize="13" FontWeight="Bold" Foreground="#00e5c0"/>
-                </StackPanel>
-                <StackPanel Margin="0,0,24,0">
-                    <TextBlock Text="TOOLS" FontFamily="Bahnschrift" FontSize="7" Foreground="#4a5a6e"/>
-                    <TextBlock x:Name="StatTools" Text="0" FontFamily="Bahnschrift" FontSize="13" FontWeight="Bold" Foreground="#5ec4ff"/>
-                </StackPanel>
-                <StackPanel Margin="0,0,24,0">
-                    <TextBlock Text="COST" FontFamily="Bahnschrift" FontSize="7" Foreground="#4a5a6e"/>
-                    <TextBlock x:Name="StatCost" Text="$0.00" FontFamily="Bahnschrift" FontSize="13" FontWeight="Bold" Foreground="#e5a000"/>
-                </StackPanel>
-                <StackPanel x:Name="TasksPanel" Margin="0,0,24,0" Visibility="Collapsed">
-                    <TextBlock Text="TASKS" FontFamily="Bahnschrift" FontSize="7" Foreground="#4a5a6e"/>
-                    <TextBlock x:Name="StatTasks" Text="0" FontFamily="Bahnschrift" FontSize="13" FontWeight="Bold" Foreground="#7dff7d"/>
-                </StackPanel>
-            </StackPanel>
-        </Border>
-        <Border Grid.Row="1" Background="#161c2e" Height="1" VerticalAlignment="Bottom"/>
+            <!-- ── Stats separator ── -->
+            <Border Grid.Row="3" Height="1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#2D1B69" Offset="0"/>
+                        <GradientStop Color="#13101E" Offset="0.5"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
 
-        <!-- ── Log area ── -->
-        <ScrollViewer x:Name="LogScroller" Grid.Row="2" VerticalScrollBarVisibility="Auto" Background="#0b0e17">
-            <RichTextBox x:Name="LogBox" Background="#0b0e17" Foreground="#b8c5d6"
-                         FontFamily="Consolas" FontSize="10" IsReadOnly="True" BorderThickness="0"
-                         Padding="14,4" VerticalScrollBarVisibility="Disabled">
-                <RichTextBox.Document>
-                    <FlowDocument/>
-                </RichTextBox.Document>
-            </RichTextBox>
-        </ScrollViewer>
+            <!-- ── Log area (Domain interior) ── -->
+            <ScrollViewer x:Name="LogScroller" Grid.Row="4"
+                          VerticalScrollBarVisibility="Auto" Background="#08060F">
+                <RichTextBox x:Name="LogBox" Background="#08060F" Foreground="#B8C2D0"
+                             FontFamily="Consolas" FontSize="12" IsReadOnly="True"
+                             BorderThickness="0" Padding="16,4"
+                             VerticalScrollBarVisibility="Disabled">
+                    <RichTextBox.Document>
+                        <FlowDocument/>
+                    </RichTextBox.Document>
+                </RichTextBox>
+            </ScrollViewer>
 
-        <!-- ── Input panel ── -->
-        <Border x:Name="InputPanel" Grid.Row="3" Background="#161c2e" Padding="14,8" Visibility="Collapsed">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBox x:Name="InputBox" Grid.Column="0" Background="#0f1420" Foreground="#e4eaf4"
-                         FontFamily="Consolas" FontSize="11" Padding="8,6" BorderThickness="1"
-                         BorderBrush="#005c4d" CaretBrush="#00e5c0"
-                         AcceptsReturn="False" TextWrapping="Wrap"
-                         MinHeight="28" MaxHeight="120"
-                         VerticalScrollBarVisibility="Auto"
-                         PreviewKeyDown="InputBox_PreviewKeyDown"/>
-                <Button x:Name="SendButton" Grid.Column="1" Content="Send" Margin="8,0,0,0"
-                        Background="#005c4d" Foreground="#00e5c0" FontFamily="Bahnschrift"
-                        Padding="16,6" BorderThickness="0" Click="SendButton_Click"/>
-            </Grid>
-        </Border>
+            <!-- ── Input panel (Curse invocation) ── -->
+            <Border x:Name="InputPanel" Grid.Row="5" Background="#13101E"
+                    Padding="16,10" Visibility="Collapsed">
+                <Border.BorderBrush>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#8B5CF6" Offset="0"/>
+                        <GradientStop Color="#EF4444" Offset="0.5"/>
+                        <GradientStop Color="Transparent" Offset="0.8"/>
+                    </LinearGradientBrush>
+                </Border.BorderBrush>
+                <Border.BorderThickness>
+                    <Thickness Top="1" Left="0" Right="0" Bottom="0"/>
+                </Border.BorderThickness>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="InputBox" Grid.Column="0"
+                             Background="#0D0A17" Foreground="#E4E8F0"
+                             FontFamily="Consolas" FontSize="13" Padding="8,6"
+                             BorderThickness="1" BorderBrush="#2D1B69" CaretBrush="#8B5CF6"
+                             AcceptsReturn="False" TextWrapping="Wrap"
+                             MinHeight="28" MaxHeight="120"
+                             VerticalScrollBarVisibility="Auto"
+                             PreviewKeyDown="InputBox_PreviewKeyDown"/>
+                    <Button x:Name="SendButton" Grid.Column="1" Content="発動"
+                            Margin="8,0,0,0"
+                            Background="#2D1B69" Foreground="#8B5CF6"
+                            FontFamily="Yu Gothic UI" FontWeight="Bold"
+                            Padding="16,6" BorderThickness="0" FontSize="14"
+                            Click="SendButton_Click">
+                        <Button.Effect>
+                            <DropShadowEffect Color="#8B5CF6" BlurRadius="10" ShadowDepth="0" Opacity="0.25"/>
+                        </Button.Effect>
+                    </Button>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             Layer 2: Domain barrier corner marks (領域結界)
+             ═══════════════════════════════════════════════════════════ -->
+        <Grid x:Name="CornerMarks" IsHitTestVisible="False">
+            <!-- ─── Top-left corner ─── -->
+            <Path Data="M 0,40 L 0,0 L 40,0" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="6,6,0,0"/>
+            <Path Data="M 0,25 L 0,0 L 25,0" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="11,11,0,0"/>
+            <Rectangle Width="5" Height="5" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4,4,0,0"/>
+
+            <!-- ─── Top-right corner ─── -->
+            <Path Data="M 0,0 L 40,0 L 40,40" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,6,6,0"/>
+            <Path Data="M 0,0 L 25,0 L 25,25" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,11,11,0"/>
+            <Rectangle Width="5" Height="5" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0"/>
+
+            <!-- ─── Bottom-left corner ─── -->
+            <Path Data="M 0,0 L 0,40 L 40,40" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="6,0,0,6"/>
+            <Path Data="M 0,0 L 0,25 L 25,25" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="11,0,0,11"/>
+            <Rectangle Width="5" Height="5" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="4,0,0,4"/>
+
+            <!-- ─── Bottom-right corner ─── -->
+            <Path Data="M 40,0 L 40,40 L 0,40" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,6,6"/>
+            <Path Data="M 25,0 L 25,25 L 0,25" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,11,11"/>
+            <Rectangle Width="5" Height="5" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,4,4"/>
+        </Grid>
     </Grid>
 </Window>

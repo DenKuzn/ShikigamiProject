@@ -293,13 +293,16 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/` to customize prompts w
 | Iteration loop | Re-launches CLI when message arrives (from any agent) while not running; context preserved between iterations |
 | Smart auto-scroll | Terminal-like: scrolling up freezes position, returning to bottom resumes auto-scroll |
 | Multiline input | Input panel supports Ctrl+Enter for newlines, Enter to send |
-| PowerShell messaging | Prompt templates use PowerShell instead of curl/Python for Unicode-safe HTTP messaging |
+| Unicode-safe messaging | Prompt templates use `printf \| curl -d @-` pipe pattern for Cyrillic-safe HTTP messaging |
 | Text wrapping | Log area wraps long lines by word instead of extending horizontally |
+| Stop button | Kill CLI mid-execution, show input panel for correction, re-launch with `user_stop` context |
+| Idle mode | AGENT_IDLE marker: Runner stays alive with green dot pulse, input panel open, accepts messages or user input |
+| Keep Active button | Header toggle: prevents auto-close on COMPLETED, transitions to idle instead; cancels close timer if already counting |
+| Auto-close on complete | AGENT_COMPLETED triggers 10s countdown in header (`closing in 10s...9s...`), then window closes |
 
 ### TODO
 | Feature | Details |
 |---|---|
-| Idle mode | AGENT_IDLE marker: keep Runner alive, wait for new messages, auto-close timer |
 | CleanContext | Format and clean event log before submitting to server (Python context.py) |
 | Horde idle/backoff | Proper polling with backoff when tasks are blocked, idle state |
 | Prompt editor button | UI button to open prompt template files in external editor |

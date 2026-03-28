@@ -20,7 +20,7 @@ public partial class MainWindow : Window
 
     private bool _dotOn;
     private bool _autoScroll = true;
-    private double _logFontSize = 10;
+    private double _logFontSize = 12;
     private int _iteration;
     private int _toolCount;
     private double _totalCost;
@@ -44,6 +44,10 @@ public partial class MainWindow : Window
     public MainWindow(AppArgs args)
     {
         InitializeComponent();
+
+        // Fast tooltips (100ms) — set on root element via code for reliable inheritance
+        ToolTipService.SetInitialShowDelay(this, 100);
+        ToolTipService.SetBetweenShowDelay(this, 0);
 
         _args = args;
         _mcp = new McpHttpClient(args.McpPort);
@@ -134,7 +138,8 @@ public partial class MainWindow : Window
         StatIteration.Text = _iteration.ToString();
         HeaderStatus.Text = "working";
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
-        StopButton.Visibility = Visibility.Visible;
+        StopButton.IsEnabled = true;
+        StopButton.Opacity = 1.0;
         await _mcp.UpdateStateAsync("working", $"Iteration {_iteration}");
 
         var builtPrompt = _promptBuilder.Build(_iteration, _allEvents);
@@ -158,7 +163,8 @@ public partial class MainWindow : Window
                 }
 
                 _running = false;
-                StopButton.Visibility = Visibility.Collapsed;
+                StopButton.IsEnabled = false;
+                StopButton.Opacity = 0.25;
 
                 // User pressed Stop → show input panel for correction
                 if (_userStopped)
@@ -263,7 +269,8 @@ public partial class MainWindow : Window
         StatIteration.Text = _iteration.ToString();
         HeaderStatus.Text = "working";
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
-        StopButton.Visibility = Visibility.Visible;
+        StopButton.IsEnabled = true;
+        StopButton.Opacity = 1.0;
 
         await Task.Run(() =>
         {
@@ -284,7 +291,8 @@ public partial class MainWindow : Window
                 _tasksCompleted++;
                 StatTasks.Text = _tasksCompleted.ToString();
                 _running = false;
-                StopButton.Visibility = Visibility.Collapsed;
+                StopButton.IsEnabled = false;
+                StopButton.Opacity = 0.25;
 
                 if (_userStopped)
                 {
@@ -448,6 +456,7 @@ public partial class MainWindow : Window
         _keepActive = !_keepActive;
         if (_keepActive)
         {
+            KeepActiveButton.Content = "◉ 結界維持";
             KeepActiveButton.Background = DeepSpaceTheme.TealDimBrush;
             KeepActiveButton.Foreground = DeepSpaceTheme.TealBrush;
             KeepActiveButton.BorderBrush = DeepSpaceTheme.TealBrush;
@@ -462,6 +471,7 @@ public partial class MainWindow : Window
         }
         else
         {
+            KeepActiveButton.Content = "◎ 結界維持";
             KeepActiveButton.Background = DeepSpaceTheme.BgPanelBrush;
             KeepActiveButton.Foreground = DeepSpaceTheme.FgDimBrush;
             KeepActiveButton.BorderBrush = DeepSpaceTheme.FgDimBrush;
@@ -473,7 +483,8 @@ public partial class MainWindow : Window
         if (!_running) return;
         _userStopped = true;
         StopButton.IsEnabled = false;
-        StopButton.Content = "STOPPING...";
+        StopButton.Opacity = 0.5;
+        StopButton.Content = "停止中...";
         _cli.Kill();
     }
 
@@ -481,8 +492,9 @@ public partial class MainWindow : Window
     {
         _waitingInput = true;
         _inputIsStop = true;
-        StopButton.IsEnabled = true;
-        StopButton.Content = "■ STOP";
+        StopButton.IsEnabled = false;
+        StopButton.Opacity = 0.25;
+        StopButton.Content = "■ 停止";
 
         var sep = new string('\u2500', 54);
         AppendLog(sep, "sys");

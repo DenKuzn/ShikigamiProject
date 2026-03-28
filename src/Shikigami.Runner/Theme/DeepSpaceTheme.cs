@@ -3,29 +3,45 @@ using System.Windows.Media;
 namespace Shikigami.Runner.Theme;
 
 /// <summary>
-/// Deep Space color palette — matches the Python original.
+/// Jujutsu Kaisen "Domain Expansion" color palette.
+/// Dark occult void with cursed energy violet, malevolent crimson, and infinity blue.
 /// </summary>
 public static class DeepSpaceTheme
 {
-    public static readonly Color Bg        = (Color)ColorConverter.ConvertFromString("#0b0e17");
-    public static readonly Color BgDark    = (Color)ColorConverter.ConvertFromString("#060a10");
-    public static readonly Color BgSurface = (Color)ColorConverter.ConvertFromString("#161c2e");
-    public static readonly Color BgPanel   = (Color)ColorConverter.ConvertFromString("#0f1420");
-    public static readonly Color Fg        = (Color)ColorConverter.ConvertFromString("#b8c5d6");
-    public static readonly Color FgDim     = (Color)ColorConverter.ConvertFromString("#4a5a6e");
-    public static readonly Color FgBright  = (Color)ColorConverter.ConvertFromString("#e4eaf4");
-    public static readonly Color Teal      = (Color)ColorConverter.ConvertFromString("#00e5c0");
-    public static readonly Color TealDim   = (Color)ColorConverter.ConvertFromString("#005c4d");
-    public static readonly Color Cyan      = (Color)ColorConverter.ConvertFromString("#5ec4ff");
-    public static readonly Color Amber     = (Color)ColorConverter.ConvertFromString("#e5a000");
-    public static readonly Color AmberDim  = (Color)ColorConverter.ConvertFromString("#1f1800");
-    public static readonly Color Green     = (Color)ColorConverter.ConvertFromString("#7dff7d");
-    public static readonly Color GreenDim  = (Color)ColorConverter.ConvertFromString("#1a3a1a");
-    public static readonly Color Red       = (Color)ColorConverter.ConvertFromString("#ff5c5c");
-    public static readonly Color Lavender  = (Color)ColorConverter.ConvertFromString("#b4a7d6");
-    public static readonly Color Peach     = (Color)ColorConverter.ConvertFromString("#ffab91");
+    // ─── The Void (Domain Interior) ─────────────────────────
+    public static readonly Color Bg        = (Color)ColorConverter.ConvertFromString("#08060F");
+    public static readonly Color BgDark    = (Color)ColorConverter.ConvertFromString("#04030A");
+    public static readonly Color BgSurface = (Color)ColorConverter.ConvertFromString("#13101E");
+    public static readonly Color BgPanel   = (Color)ColorConverter.ConvertFromString("#0D0A17");
 
-    // Brushes (frozen for perf)
+    // ─── Text — neutral silver (readable against void) ─────
+    public static readonly Color Fg        = (Color)ColorConverter.ConvertFromString("#B8C2D0");
+    public static readonly Color FgDim     = (Color)ColorConverter.ConvertFromString("#4A3D65");
+    public static readonly Color FgBright  = (Color)ColorConverter.ConvertFromString("#E4E8F0");
+
+    // ─── Cursed Energy (呪力) — primary accent ──────────────
+    public static readonly Color Teal      = (Color)ColorConverter.ConvertFromString("#8B5CF6");
+    public static readonly Color TealDim   = (Color)ColorConverter.ConvertFromString("#2D1B69");
+
+    // ─── Infinity Blue (無下限) — tools & techniques ────────
+    public static readonly Color Cyan      = (Color)ColorConverter.ConvertFromString("#60A5FA");
+
+    // ─── Cursed Flame (呪炎) — warnings ─────────────────────
+    public static readonly Color Amber     = (Color)ColorConverter.ConvertFromString("#F59E0B");
+    public static readonly Color AmberDim  = (Color)ColorConverter.ConvertFromString("#2D1F05");
+
+    // ─── Reverse Cursed Technique (反転術式) — success ──────
+    public static readonly Color Green     = (Color)ColorConverter.ConvertFromString("#34D399");
+    public static readonly Color GreenDim  = (Color)ColorConverter.ConvertFromString("#0A2E1F");
+
+    // ─── Malevolent (宿儺) — danger ─────────────────────────
+    public static readonly Color Red       = (Color)ColorConverter.ConvertFromString("#EF4444");
+
+    // ─── Special Accents ────────────────────────────────────
+    public static readonly Color Lavender  = (Color)ColorConverter.ConvertFromString("#A78BFA");
+    public static readonly Color Peach     = (Color)ColorConverter.ConvertFromString("#D4A574");
+
+    // ─── Brushes (frozen for perf) ──────────────────────────
     public static readonly SolidColorBrush BgBrush        = Freeze(new SolidColorBrush(Bg));
     public static readonly SolidColorBrush BgDarkBrush    = Freeze(new SolidColorBrush(BgDark));
     public static readonly SolidColorBrush BgSurfaceBrush = Freeze(new SolidColorBrush(BgSurface));
@@ -44,7 +60,7 @@ public static class DeepSpaceTheme
     public static readonly SolidColorBrush LavenderBrush  = Freeze(new SolidColorBrush(Lavender));
     public static readonly SolidColorBrush PeachBrush     = Freeze(new SolidColorBrush(Peach));
 
-    public const string FontUi   = "Bahnschrift";
+    public const string FontUi   = "Yu Gothic UI";
     public const string FontMono = "Consolas";
 
     private static SolidColorBrush Freeze(SolidColorBrush brush)
