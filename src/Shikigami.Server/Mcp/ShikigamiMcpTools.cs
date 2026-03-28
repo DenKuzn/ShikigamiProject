@@ -72,8 +72,8 @@ public sealed class ShikigamiMcpTools
             return JsonSerializer.Serialize(new { error = "Recipient not found" });
         }
 
-        var queue = _state.Queues.GetOrAdd(recipient_id, _ => new List<MessageRecord>());
-        lock (queue) queue.Add(msg);
+        var queue = _state.Queues.GetOrAdd(recipient_id, _ => new MessageQueue());
+        queue.Enqueue(msg);
         return JsonSerializer.Serialize(new { ok = true });
     }
 
@@ -81,19 +81,9 @@ public sealed class ShikigamiMcpTools
      Description("Get (and delete) all incoming messages for the lead. Returns array of {sender_id, text, timestamp}.")]
     public string CheckMessages()
     {
-        List<MessageRecord> messages;
-        if (_state.Queues.TryGetValue("lead", out var queue))
-        {
-            lock (queue)
-            {
-                messages = new List<MessageRecord>(queue);
-                queue.Clear();
-            }
-        }
-        else
-        {
-            messages = new();
-        }
+        var messages = _state.Queues.TryGetValue("lead", out var queue)
+            ? queue.DrainAll()
+            : new List<MessageRecord>();
         foreach (var msg in messages)
             _state.ToTrash(msg, "lead", "read");
         return JsonSerializer.Serialize(messages);
@@ -318,19 +308,9 @@ public sealed class ShikigamiMcpTools
         if (!_state.Pools.TryGetValue(pool_id, out var pool))
             return JsonSerializer.Serialize(new { error = "Pool not found" });
 
-        List<MessageRecord> messages;
-        if (pool.Queues.TryGetValue("lead", out var queue))
-        {
-            lock (queue)
-            {
-                messages = new List<MessageRecord>(queue);
-                queue.Clear();
-            }
-        }
-        else
-        {
-            messages = new();
-        }
+        var messages = pool.Queues.TryGetValue("lead", out var queue)
+            ? queue.DrainAll()
+            : new List<MessageRecord>();
         foreach (var msg in messages)
             ShikigamiState.PoolToTrash(pool, msg, "lead", "read");
         return JsonSerializer.Serialize(messages);
@@ -350,8 +330,8 @@ public sealed class ShikigamiMcpTools
             return JsonSerializer.Serialize(new { error = "Recipient not found in pool" });
         }
 
-        var queue = pool.Queues.GetOrAdd(recipient_id, _ => new List<MessageRecord>());
-        lock (queue) queue.Add(msg);
+        var queue = pool.Queues.GetOrAdd(recipient_id, _ => new MessageQueue());
+        queue.Enqueue(msg);
         return JsonSerializer.Serialize(new { ok = true });
     }
 }

@@ -52,7 +52,7 @@ public sealed class ShikigamiContextMemory
                     {
                         ["role"] = "tool_call",
                         ["name"] = evt.TryGetValue("name", out var n) ? n.ToString() ?? "" : "",
-                        ["input"] = evt.TryGetValue("detail", out var d) ? d.ToString() ?? "" : "",
+                        ["input"] = evt.TryGetValue("full_input", out var fi) ? fi.ToString() ?? "" : "",
                     });
                     break;
 

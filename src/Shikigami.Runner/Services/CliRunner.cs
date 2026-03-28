@@ -172,7 +172,8 @@ public sealed class CliRunner
                                         result.ToolsUsed++;
                                         var name = blk.TryGetProperty("name", out var np) ? np.GetString() ?? "?" : "?";
                                         var detail = ExtractToolDetail(blk, name);
-                                        result.Events.Add(new() { ["type"] = "tool", ["name"] = name, ["detail"] = detail, ["time"] = ts });
+                                        var fullInput = blk.TryGetProperty("input", out var fip) ? fip.ToString() : "";
+                                        result.Events.Add(new() { ["type"] = "tool", ["name"] = name, ["detail"] = detail, ["full_input"] = fullInput, ["time"] = ts });
                                         emit("tool", new() { ["number"] = toolN, ["name"] = name, ["detail"] = detail });
                                         break;
                                     case "thinking":

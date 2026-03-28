@@ -92,7 +92,7 @@ public partial class StatusWindow : Window
 
         // Stats
         var active = _state.Agents.Values.Where(a => a.Active).ToList();
-        var totalMsgs = _state.Queues.Values.Sum(q => { lock (q) return q.Count; });
+        var totalMsgs = _state.Queues.Values.Sum(q => q.Count);
         var resultsCount = _state.Agents.Values.Count(a => a.Result != null);
         var logsCount = _state.Agents.Values.Count(a => a.EventLog != null);
 

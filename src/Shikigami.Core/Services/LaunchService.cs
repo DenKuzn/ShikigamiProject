@@ -120,7 +120,7 @@ public sealed class LaunchService
                 AgentType = agentType,
                 Pid = pid.Value,
             };
-            pool.Queues[agentId] = new List<MessageRecord>();
+            pool.Queues[agentId] = new MessageQueue();
             launched.Add(new Dictionary<string, object>
             {
                 ["agent_type"] = agentType,

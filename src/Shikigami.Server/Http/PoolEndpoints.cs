@@ -148,7 +148,7 @@ public static class PoolEndpoints
                 AgentType = data.GetProperty("agent_type").GetString()!,
                 Pid = data.GetProperty("pid").GetInt32(),
             };
-            pool.Queues.GetOrAdd(agentId, _ => new List<MessageRecord>());
+            pool.Queues.GetOrAdd(agentId, _ => new MessageQueue());
 
             return Results.Json(new { ok = true });
         });
@@ -176,8 +176,8 @@ public static class PoolEndpoints
 
             agentInfo.Active = false;
             agentInfo.State = "completed";
-            if (pool.Queues.TryRemove(agentId, out var msgs))
-                foreach (var msg in msgs)
+            if (pool.Queues.TryRemove(agentId, out var queue))
+                foreach (var msg in queue.DrainAll())
                     ShikigamiState.PoolToTrash(pool, msg, agentId, "agent_unregistered");
 
             return Results.Json(new { ok = true });
@@ -199,22 +199,22 @@ public static class PoolEndpoints
                 {
                     if (aid != senderId && ai.Active)
                     {
-                        var q = pool.Queues.GetOrAdd(aid, _ => new List<MessageRecord>());
-                        lock (q) q.Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
+                        var q = pool.Queues.GetOrAdd(aid, _ => new MessageQueue());
+                        q.Enqueue(new MessageRecord { SenderId = senderId, Text = msg.Text });
                     }
                 }
-                var leadQ = pool.Queues.GetOrAdd("lead", _ => new List<MessageRecord>());
-                lock (leadQ) leadQ.Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
+                var leadQ = pool.Queues.GetOrAdd("lead", _ => new MessageQueue());
+                leadQ.Enqueue(new MessageRecord { SenderId = senderId, Text = msg.Text });
             }
             else if (recipientId == "lead")
             {
-                var q = pool.Queues.GetOrAdd("lead", _ => new List<MessageRecord>());
-                lock (q) q.Add(msg);
+                var q = pool.Queues.GetOrAdd("lead", _ => new MessageQueue());
+                q.Enqueue(msg);
             }
             else if (pool.Agents.ContainsKey(recipientId))
             {
-                var q = pool.Queues.GetOrAdd(recipientId, _ => new List<MessageRecord>());
-                lock (q) q.Add(msg);
+                var q = pool.Queues.GetOrAdd(recipientId, _ => new MessageQueue());
+                q.Enqueue(msg);
             }
             else
             {
@@ -231,19 +231,9 @@ public static class PoolEndpoints
                 return Results.Json(new { error = "Pool not found" }, statusCode: 404);
 
             var agentId = ctx.Request.Query["agent_id"].FirstOrDefault() ?? "";
-            List<MessageRecord> messages;
-            if (pool.Queues.TryGetValue(agentId, out var queue))
-            {
-                lock (queue)
-                {
-                    messages = new List<MessageRecord>(queue);
-                    queue.Clear();
-                }
-            }
-            else
-            {
-                messages = new();
-            }
+            var messages = pool.Queues.TryGetValue(agentId, out var queue)
+                ? queue.DrainAll()
+                : new List<MessageRecord>();
 
             foreach (var msg in messages)
                 ShikigamiState.PoolToTrash(pool, msg, agentId, "read");

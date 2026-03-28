@@ -13,7 +13,7 @@ public sealed class PoolRecord
     public ConcurrentDictionary<string, PoolAgentInfo> Agents { get; set; } = new();
     public ConcurrentDictionary<string, TaskRecord> Tasks { get; set; } = new();
     public List<string> TaskOrder { get; set; } = new();
-    public ConcurrentDictionary<string, List<MessageRecord>> Queues { get; set; } = new() { ["lead"] = new() };
+    public ConcurrentDictionary<string, MessageQueue> Queues { get; set; } = new() { ["lead"] = new() };
     public List<TrashEntry> Trash { get; set; } = new();
     public string CreatedAt { get; set; } = DateTime.UtcNow.ToString("o");
     public string? CompletedAt { get; set; }

@@ -1,332 +1,213 @@
-# Architecture & Code Assessment — Shikigami Project
+# Architecture Assessment — Shikigami Project
 
 **Date:** 2026-03-29
-**Scope:** Full codebase — Shikigami.Core, Shikigami.Server, Shikigami.Runner
-**Rules applied:** Design-Code rules (architecture-base, design-classes, design-methods, design-parameters, design-conditionals, design-robustcode, design-nesting)
+**Rules applied:** `~/.claude/agent-rules/Design-Code/*` (architecture-base, design-classes, design-methods, design-parameters, design-conditionals, design-nesting, design-loops, design-robustcode, design-process)
 
 ---
 
 ## Summary
 
-The project has a solid foundation: clean 3-project separation, sensible domain modeling, working product. However, several architectural decisions — primarily the use of raw strings for status values and untyped dictionaries for data transport — create compounding risks as the codebase grows. The MainWindow is a God class with a hidden state machine made of 7+ booleans.
-
-| Category | Count |
-|---|---|
-| What works well | 10 |
-| Should fix (moderate) | 12 |
-| Critical to fix | 4 |
+The project is a well-structured .NET 9 rewrite of a Python MCP server + runner system. The overall decomposition (Core/Server/Runner) is clean, and several design decisions demonstrate solid engineering judgment. However, there are pervasive issues with type safety (magic strings as status values), one God class (MainWindow), and inconsistent error handling that will compound as the project grows.
 
 ---
 
 ## What Works Well
 
-### 1. Clean Project Decomposition
-Three projects (Core, Server, Runner) with clear responsibilities:
-- Core = domain models + business logic (zero UI/transport dependency)
-- Server = MCP + HTTP + dashboard
-- Runner = WPF per-shikigami GUI
+### 1. Clean Solution Decomposition
+The three-project split (Core = domain, Server = transport, Runner = GUI) follows the Decomposition Protocol correctly. Dependencies are acyclic: Runner → Core (via HTTP, not direct reference), Server → Core. This allows each layer to change independently.
 
-This passes the Decomposition Protocol test: dependency graph is acyclic (Core ← Server, Core ← Runner; Server and Runner don't depend on each other).
+**Rule satisfied:** architecture-base §DECOMPOSITION PROTOCOL — acyclic dependency graph at every level.
 
-### 2. Focused Domain Models
-`AgentRecord`, `TaskRecord`, `MessageRecord`, `PromptRecord` — each represents exactly one ADT. No method bloat, no mixed abstraction levels. Pass the ADT test: "Can you describe ALL public members as serving one purpose in one sentence?"
+### 2. RunnerState Enum Replacing Booleans
+`MainWindow.cs:20-31` — The `RunnerState` enum explicitly replaces 7 implicit booleans (`_running`, `_waitingInput`, `_inputIsStop`, `_idle`, `_hordeWaiting`, etc.). The comment even explains the rationale. This is a textbook application of the Multi-Bool State Machine rule.
 
-### 3. Thread-Safe State Store
-`ShikigamiState` uses `ConcurrentDictionary` for primary collections and explicit locks for cost accounting. Atomic cost delta calculation (`UpdateAgentCost`, `UpdatePoolAgentCost`) avoids race conditions on the cost counter.
+**Rule satisfied:** architecture-base §Multi-Bool State Machine Smell — one enum, all states named, no invalid combinations.
 
-### 4. PoolService Business Logic Isolation
-Pool validation, task assignment, cascade failure, and dependency resolution are isolated in `PoolService`. This is a textbook example of information hiding — callers don't need to know the dependency graph traversal algorithm.
+### 3. MessageQueue as ADT
+`MessageQueue.cs` — Encapsulates `List<MessageRecord>` + lock behind `Enqueue()`/`DrainAll()`/`Count`. Callers never see the lock. This is a good example of Information Hiding: the secret (thread-safe list management) is completely hidden behind the interface.
 
-### 5. External Prompt Templates
-Prompt templates live as `.txt` files next to the executable with built-in fallbacks. Good binding time choice: load-time for templates that designers may edit, compile-time constants as safety net.
+**Rule satisfied:** design-classes §ADT, architecture-base §INFORMATION HIDING.
 
-### 6. ShikigamiContextMemory Scoping
-Horde mode scopes history per task (`BeginTask`/`CurrentTaskJson`), while preserving full history for debugging (`ToJson`). Clean separation of scoped vs. complete context.
+### 4. PromptBuilder Template Externalization
+`PromptBuilder.cs` — Templates loaded from external files with built-in fallback defaults. This correctly isolates the volatile area (prompt wording) behind a stable interface (the Build method). Changing prompts requires no recompilation.
 
-### 7. CLI Runner Event Parsing
-`CliRunner.Run` cleanly separates process management from event parsing. The `onEvent` callback pattern allows the caller (MainWindow) to handle UI updates without the runner knowing about WPF.
+**Rule satisfied:** architecture-base §CHANGE ANTICIPATION MAP — volatile business rules isolated in one place.
 
-### 8. ViewModel Pattern
-`RunnerViewModel` implements `INotifyPropertyChanged` with a clean generic `Set<T>` helper. Properties are correctly separated from the view.
+### 5. Single-Responsibility Services
+`PidMonitor`, `IdGenerator`, `PoolService` each have a clear, single purpose. Each passes the SRP test: "what does it do?" can be answered in one phrase without "and".
 
-### 9. PID Monitor as Background Service
-`PidMonitor.RunAsync` runs independently with `CancellationToken` support. No coupling to UI — it just mutates state, and the dashboard refreshes independently.
-
-### 10. Backward-Compatible API
-HTTP endpoints preserve the Python original's contract exactly. External clients (Runners) don't need to know this is a .NET rewrite.
+### 6. ShikigamiContextMemory Task Scoping
+`ShikigamiContextMemory.cs` — `BeginTask()`/`CurrentTaskJson()` elegantly scopes horde history per task while preserving full history. Clean separation of concerns.
 
 ---
 
-## Should Fix (Moderate Priority)
+## Should Fix (Medium Priority)
 
-### M1. Magic Strings for Status Values
-**Rule violated:** architecture-base §Bool vs Enum, §CHANGE ANTICIPATION MAP
+### S1. Magic Strings for All Status Values
+**Severity:** High (borderline Critical)
+**Locations:** Every file that checks or sets status — `PoolService.cs`, `ShikigamiState.cs`, `AgentEndpoints.cs`, `PoolEndpoints.cs`, `ShikigamiMcpTools.cs`, `MainWindow.xaml.cs`, `PoolRecord.cs`, `TaskRecord.cs`, `PoolAgentInfo`.
 
-Status values are raw strings throughout the codebase:
+Status values are raw strings scattered across the entire codebase:
+- Task: `"pending"`, `"in_progress"`, `"completed"`, `"failed"`
+- Pool: `"in_progress"`, `"completed"`, `"aborted"`
+- Agent: `"working"`, `"waiting"`, `"completed"`, `"failed"`, `"idle"`, `"dead"`, `"starting"`, `"registered"`
 
-| Domain | Values | Files affected |
-|---|---|---|
-| Task status | `"pending"`, `"completed"`, `"failed"`, `"in_progress"` | PoolService, PoolEndpoints, ShikigamiMcpTools, MainWindow |
-| Pool status | `"in_progress"`, `"completed"`, `"aborted"` | PoolRecord, PoolService, PidMonitor, ShikigamiMcpTools, PoolEndpoints |
-| Agent state | `"working"`, `"waiting"`, `"completed"`, `"failed"`, `"idle"`, `"dead"`, `"starting"` | MainWindow, AgentEndpoints, StatusWindow |
+**Violation:** architecture-base §INFORMATION HIDING ("literal 100 scattered everywhere → const"), §Bool vs Enum ("Status with 2+ possible states → enum"), §CHANGE ANTICIPATION MAP ("status variables → enum + accessor").
 
-**Risk:** Adding a new status requires grep-and-fix across the entire codebase. A typo (`"complted"`) is a silent bug — no compiler error.
+**Risk:** A single typo (`"Pending"` vs `"pending"`) silently breaks the entire pool system. No compiler protection. Adding a new status requires grep-and-pray across all files.
 
-**Fix:** Create enums `TaskStatus`, `PoolStatus`, `AgentState` in Shikigami.Core. Use `[JsonConverter]` for HTTP/MCP serialization.
+**Fix:** Create enums: `TaskStatus`, `PoolStatus`, `AgentStatus`. Use `[JsonConverter]` for JSON serialization if HTTP compatibility is needed. This is the single highest-ROI change.
 
-### M2. Dictionary<string, object> as Data Transport
-**Rule violated:** design-classes §ADT, design-parameters §Type Safety
+### S2. `Dictionary<string, object>` as Return Type
+**Locations:** `LaunchService.LaunchPromptAgent()`, `LaunchService.LaunchPool()`, all MCP tools via JSON serialization.
 
-`LaunchService` returns `Dictionary<string, object>` for both success and error cases:
+`LaunchService` returns `Dictionary<string, object>` for both success and error cases. The caller must check `result.ContainsKey("error")` — a semantic contract the compiler cannot enforce.
+
+**Violation:** design-classes §ADT ("classes become bad data bags"), architecture-base §INTERFACE DESIGN RULE.
+
+**Fix:** Create typed result records:
 ```csharp
-// LaunchService.cs:26
-public Dictionary<string, object> LaunchPromptAgent(...)
-// LaunchService.cs:90
-public Dictionary<string, object> LaunchPool(...)
+public record LaunchResult(string AgentId, int Pid, int Port);
+public record LaunchError(string Message);
+// Or use a discriminated union / Result<T,E> pattern
 ```
 
-`PoolService.ValidateTasks` and `CreatePool` accept `List<Dictionary<string, object>>` for task data.
+### S3. Dates Stored as Strings
+**Locations:** `AgentRecord.RegisteredAt`, `PoolRecord.CreatedAt`, `TaskRecord.CreatedAt`/`StartedAt`/`CompletedAt`, etc.
 
-**Risk:** No compile-time safety. Caller must know exact key names. Refactoring a key name requires searching strings. `task["id"].ToString()!` can throw `KeyNotFoundException` at runtime.
+All timestamps are `string` fields initialized with `DateTime.UtcNow.ToString("o")`. This loses type safety: you cannot compare dates, sort by date, or compute durations without parsing back.
 
-**Fix:** Create typed DTOs: `LaunchResult`, `LaunchError`, `TaskInput`. Use discriminated union pattern (`Result<TSuccess, TError>`) or separate types.
+**Violation:** design-parameters §Type Safety ("Choose the type that makes invalid states unrepresentable").
 
-### M3. Timestamps as Strings
-**Rule violated:** design-parameters §Type Safety
+**Fix:** Use `DateTime` or `DateTimeOffset` internally. Serialize to ISO 8601 only at the HTTP/JSON boundary.
 
-Every record stores timestamps as `string`:
-```csharp
-public string RegisteredAt { get; set; } = DateTime.UtcNow.ToString("o");
-public string CreatedAt { get; set; } = DateTime.UtcNow.ToString("o");
-```
+### S4. CliRunner.Run() — Deep Nesting and Length
+**Location:** `CliRunner.cs:73-234` — ~160 lines, with a `switch` inside `foreach` inside `switch` inside `while` (4+ levels).
 
-**Risk:** Cannot sort, compare, or compute duration without parsing. No compiler protection against non-ISO strings being assigned.
+**Violation:** design-nesting §Core Rule (max 3 levels), design-methods §Length (caution above 200 LOC, but complexity metrics matter more).
 
-**Fix:** Use `DateTimeOffset` internally. Convert to ISO string only at serialization boundaries (JSON output).
+**Fix:** Extract the event parsing into a separate method (`ParseStreamEvent`). The `while/ReadLine` loop becomes a simple dispatcher.
 
-### M4. Duplicated Message Drain Pattern
-**Rule violated:** design-methods §Why Create (code duplication at 4+ sites)
+### S5. No Input Validation at HTTP Barricade
+**Locations:** `AgentEndpoints.cs`, `PoolEndpoints.cs`.
 
-The "lock → copy → clear → trash" pattern appears in:
-- `ShikigamiMcpTools.CheckMessages()` (line 84-99)
-- `ShikigamiMcpTools.CheckPoolMessages()` (line 321-337)
-- `AgentEndpoints /messages/{agentId}` (line 98-114)
-- `PoolEndpoints /pools/{poolId}/messages/check` (line 234-249)
+HTTP endpoints call `data.GetProperty("prompt_id").GetString()!` directly. If the field exists but is null, or the wrong JSON type, this throws an unhandled `InvalidOperationException`. Some endpoints validate required fields (registration), others don't (messaging, cost update).
 
-**Fix:** Extract to `ShikigamiState.DrainQueue(string queueId)` that returns `List<MessageRecord>` and handles locking internally.
+**Violation:** design-robustcode §Input Validation ("Every function validates its inputs"), §Barricades ("Validation classes at the boundary form a wall").
 
-### M5. ShikigamiState Exposes Public Collections
-**Rule violated:** design-classes §Encapsulation
+**Fix:** Consistent validation at every HTTP endpoint entry point. Public methods validate; internal methods can assume clean data.
 
-```csharp
-public ConcurrentDictionary<string, AgentRecord> Agents { get; } = new();
-public ConcurrentDictionary<string, List<MessageRecord>> Queues { get; } = new();
-```
+### S6. RunnerViewModel Is Dead Code
+**Location:** `RunnerViewModel.cs` — 48 lines of unused ViewModel. `MainWindow` manages its own state directly, never referencing this class.
 
-Any code can directly manipulate `Agents`, `Queues`, `Prompts`, `Pools`. The `Queues` dictionary stores `List<MessageRecord>` — a non-thread-safe collection inside a concurrent dictionary. Every caller must remember to `lock(queue)`.
+**Violation:** design-process §Desirable Characteristics — Leanness ("Can you remove any part without losing functionality?").
 
-**Fix:** Make collections private. Expose domain-level methods: `RegisterAgent(...)`, `EnqueueMessage(...)`, `DrainQueue(...)`, `FindAgent(...)`. Lock management stays inside the state class.
+**Fix:** Delete it, or commit to MVVM and wire it up. Currently it's speculative code that adds confusion.
 
-### M6. StatusWindow Duplicates Color Definitions
-**Rule violated:** architecture-base §INFORMATION HIDING (same secret in two places)
+### S7. Inconsistent Error Swallowing
+**Locations:**
+- `LaunchService.LaunchTaskAgent()` line 160: `catch { return null; }` — all diagnostic info lost
+- `McpHttpClient.RequestAsync()` line 63: `catch { return null; }` — network errors invisible
+- `MainWindow.PollMessagesAsync()` line 577: `catch { }` — polling failures silently ignored
+- `CliRunner.Kill()` line 65: `catch { ... } catch { }` — double empty catch
+- `PidMonitor.IsPidAlive()` line 69: `catch { return false; }` — PID check failures treated as "dead"
 
-`StatusWindow.xaml.cs` defines its own color set:
-```csharp
-private static readonly SolidColorBrush TealBrush = Frozen("#8B5CF6"); // This is actually purple!
-```
+**Violation:** design-robustcode §Error Handling Strategies ("Error handling strategy is an ARCHITECTURE decision"), §Exceptions ("Never leave empty catch blocks").
 
-Meanwhile, `DeepSpaceTheme.cs` in Runner defines different values. The StatusWindow's "Teal" is `#8B5CF6` (purple), while Runner's Teal is `#00E5C0`.
+**Fix:** Decide on one strategy at the architecture level. For a consumer application (game tooling), Robustness is appropriate: log warnings and continue. But silent swallowing is not robustness — it's negligence. At minimum, add `Console.Error.WriteLine` to every catch block.
 
-**Fix:** Move shared color definitions to Shikigami.Core or a shared constants file. Both Server and Runner reference the same source.
+### S8. Thread Safety Gaps in PoolRecord
+**Location:** `PoolRecord.cs`
 
-### M7. Empty catch Blocks
-**Rule violated:** design-robustcode §Exceptions ("Never leave empty catch blocks")
+- `TaskOrder` is `List<string>` — not thread-safe, but read from HTTP endpoints while pool creation writes to it
+- `Trash` is `List<TrashEntry>` — manually locked in `PoolToTrash` but other reads (e.g., serialization in StatusWindow) are unprotected
 
-Found in:
-- `CliRunner.Kill()` (line 66): `catch { }`
-- `CliRunner.Run()` (line 147): `catch { continue; }`
-- `LaunchService.LaunchTaskAgent()` (line 161): `catch { return null; }`
-- `McpHttpClient.RequestAsync()` (line 63): `catch { return null; }`
-- `MainWindow.PollMessagesAsync()` (line 563): `catch { }`
+**Violation:** design-robustcode §Core Principle ("If a method receives bad data, it must not corrupt the system").
 
-**Fix:** At minimum, log the exception. For `McpHttpClient`, return a typed error result instead of null. For `PollMessagesAsync`, log to the UI log panel.
-
-### M8. No Consistent Error Handling Strategy
-**Rule violated:** design-robustcode §Error Handling Strategies ("Error handling is an ARCHITECTURE decision")
-
-Current state:
-- `LaunchService`: returns `Dictionary` with `["error"]` key
-- `McpHttpClient.RequestAsync`: returns `null` on failure
-- `PoolService.ValidateTasks`: returns `string?` (null = OK)
-- HTTP endpoints: return `Results.Json(new { error = ... }, statusCode)` inline
-- MCP tools: return JSON with `{ "error": "..." }` as string
-
-**Fix:** Define a project-wide error strategy. Suggestion: use `Result<T>` pattern in Core/Services. Convert to appropriate format (HTTP status, MCP JSON) only at the transport layer.
-
-### M9. Unblocking Logic Duplicated Between Endpoints and MCP Tools
-**Rule violated:** design-methods §Why Create (duplication)
-
-The "check which tasks are unblocked after completion" logic appears in:
-- `ShikigamiMcpTools.UpdateTaskStatus()` (line 289-294)
-- `PoolEndpoints /complete` (line 106-111)
-
-Both contain the same loop: find pending tasks whose dependencies are all completed.
-
-**Fix:** Move to `PoolService.GetUnblockedTasks(pool, completedTaskId)`.
-
-### M10. FindClaude() Searches PATH on Every Call
-**Rule violated:** design-parameters §Binding Time
-
-`CliRunner.FindClaude()` iterates through `$PATH` directories looking for `claude`, `claude.cmd`, `claude.exe` on every invocation. This is a load-time value (doesn't change during execution).
-
-**Fix:** Cache the result on first call (lazy static).
-
-### M11. PoolService Uses Untyped Input
-**Rule violated:** design-parameters §Type Safety, design-methods §Parameters
-
-```csharp
-public string? ValidateTasks(List<Dictionary<string, object>> tasksBatch)
-public PoolRecord CreatePool(string poolId, List<Dictionary<string, object>> tasksBatch, ...)
-```
-
-The private helper `GetDependsOn` manually extracts `depends_on` from a dictionary and handles both `List<string>` and `JsonElement` cases.
-
-**Fix:** Deserialize into a typed `TaskInput` record at the MCP/HTTP boundary. PoolService receives strongly typed input.
-
-### M12. Law of Demeter Violations in Endpoint Code
-**Rule violated:** design-classes §Coupling
-
-Chains like:
-```csharp
-pool.Tasks.Values.Count(t => t.Status == "pending")  // PoolEndpoints, line 69
-pool.Tasks.Values.All(t => t.Status is "completed" or "failed")  // PoolEndpoints, line 73
-pool.Agents.Values.Count(a => a.Active)  // ShikigamiMcpTools, line 216
-```
-
-Appear in Server code, reaching deep into Core models.
-
-**Fix:** Add query methods to `PoolRecord` or `PoolService`: `GetPendingCount()`, `AreAllTerminal()`, `GetActiveAgentCount()`.
+**Fix:** Use `ConcurrentBag<string>` for TaskOrder (or lock consistently), and lock all Trash access points. Alternatively, make pool creation atomic (build the record fully, then publish it to the concurrent dictionary).
 
 ---
 
-## Critical to Fix
+## Critical (Must Fix Before Growth)
 
-### C1. Hidden State Machine in MainWindow (7+ Booleans)
-**Rule violated:** architecture-base §Multi-Bool State Machine Smell
+### C1. MainWindow Is a God Class
+**Location:** `MainWindow.xaml.cs` — 817 lines, 20+ fields, fan-out ~15 classes.
 
-```csharp
-private bool _running;
-private bool _waitingInput;
-private bool _userStopped;
-private bool _inputIsStop;
-private bool _idle;
-private bool _keepActive;
-private bool _hordeWaiting;
-```
+This single class handles:
+- CLI process orchestration (launch, kill, evaluate results)
+- Horde task dispatch and retry logic
+- MCP message polling and response
+- UI event handling (input, scroll, zoom, buttons)
+- State machine transitions (9 states)
+- Timer management (4 distinct timers)
+- Prompt building delegation
+- Context memory management
+- Auto-close countdown logic
 
-Truth table of possible combinations: 2^7 = 128. Many are invalid:
-- `_running = true` + `_idle = true` → impossible (but not prevented)
-- `_waitingInput = true` + `_running = true` → impossible
-- `_hordeWaiting = true` + `_running = true` → impossible
-- `_userStopped = true` + `_idle = true` → meaningless
+**Violation:** design-classes §Classes to Avoid ("God class — knows everything, does everything"), architecture-base §COUPLING RULES (fan-out > 7 → decompose), §UNIVERSAL PRINCIPLES — Miller's Rule (20+ fields exceeds 7±2).
 
-The compiler cannot prevent any of these. Bugs here are silent and state-dependent.
+**Why this is critical:** Every new feature (prompt editor button, improved horde idle/backoff, any UI addition) requires modifying this one file. One change to CLI orchestration risks breaking the timer logic. The blast radius of any modification is the entire 800-line file. This is the #1 bottleneck for growth.
 
-**Fix:** Replace with a single enum:
-```csharp
-enum RunnerState
-{
-    Starting,
-    Working,
-    WaitingInput,      // user question or stop correction
-    Idle,              // AGENT_IDLE received
-    HordeWaiting,      // waiting for blocked tasks
-    Completing,        // countdown to close
-    Completed,
-    Aborted,
-}
-```
+**Fix:** Extract responsibilities into focused classes:
+- `PromptModeOrchestrator` — prompt-mode launch/evaluate/relaunch cycle
+- `HordeModeOrchestrator` — horde task dispatch, retry, poll logic
+- `RunnerUiController` — input enable/disable, log append, scroll, zoom
+- Keep MainWindow as a thin dispatcher that wires services to UI events
 
-Use a state machine with explicit transitions. `_keepActive` is an orthogonal flag (can stay as bool).
+### C2. No Consistent Error Handling Architecture
+**Across the project.**
 
-### C2. MainWindow is a God Class (~800 LOC, 10+ responsibilities)
-**Rule violated:** design-classes §Classes to Avoid (God class)
+Three incompatible error reporting patterns exist simultaneously:
+1. `Dictionary<string, object>` with `["error"]` key (LaunchService)
+2. JSON string with `{ "error": "..." }` (MCP tools, HTTP endpoints)
+3. `null` return (McpHttpClient, LaunchTaskAgent)
+4. Exception throwing (direct `GetProperty` calls in endpoints)
 
-`MainWindow.xaml.cs` handles:
-1. CLI lifecycle management (BeginCliPass, FinishCliPass, RunCliPassAsync)
-2. Prompt mode flow (LaunchPassAsync, marker validation)
-3. Horde mode flow (DispatchNextTaskAsync, RelaunchHordeTaskAsync, EvaluateHordeResult)
-4. Message polling (PollMessagesAsync)
-5. State transitions (EnterIdle, ExitIdle, CompleteWithCountdown)
-6. User input handling (AskUser, AskUserAfterStop, SendInput)
-7. UI event routing (HandleEvent, AppendLog, scroll, zoom)
-8. Dot pulse animation
-9. Lifecycle management (StartAsync, Shutdown)
+**Violation:** design-robustcode §Error Handling Strategies ("Error handling strategy is an ARCHITECTURE decision, not a per-function decision").
 
-Fan-out: McpHttpClient, CliRunner, PromptBuilder, ShikigamiContextMemory, DeepSpaceTheme, EmojiIcon, DispatcherTimer (4 instances), AppArgs. That's 10+ dependencies — well beyond the Miller's Rule limit of 7.
+**Why this is critical:** When two subsystems use different error patterns, the boundary between them silently drops errors. For example, `LaunchTaskAgent` returns `null` on failure, and `LaunchPool` just calls `continue` — the pool launches with missing agents and no diagnostic. As more features are added, these silent drops will create increasingly mysterious failures.
 
-**Fix:** Extract into focused classes:
-- `PromptModeController` — prompt-mode flow + marker validation
-- `HordeModeController` — horde flow + task dispatch + marker validation
-- `MessagePoller` — periodic polling + display
-- `RunnerStateManager` — state machine (replaces 7 booleans)
+**Fix:** Choose ONE pattern for the entire project. For a consumer application, recommended approach:
+- Internal APIs: use `Result<T>` type (success or error with message)
+- External boundaries (HTTP, MCP): convert to JSON error response at the boundary
+- Background operations: log to `Console.Error` (already used in PidMonitor — make it universal)
 
-MainWindow becomes a thin shell that delegates to these controllers.
+### C3. Status Magic Strings Are a Ticking Bomb
+(Elevated from S1 due to blast radius)
 
-### C3. Thread Safety of Queues (List inside ConcurrentDictionary)
-**Rule violated:** design-robustcode §Core Principle ("must not corrupt the system")
+This is listed in both sections because while each individual string comparison seems harmless, the aggregate effect is a system where:
+- 6 files share implicit knowledge of the exact string values
+- No refactoring tool can safely rename a status
+- HTTP API, MCP tools, business logic, and UI all embed the same strings independently
+- The pool completion logic (`CheckPoolCompletion`) makes critical decisions based on string equality
 
-```csharp
-public ConcurrentDictionary<string, List<MessageRecord>> Queues { get; } = new();
-```
-
-`ConcurrentDictionary` protects the dictionary itself, but `List<MessageRecord>` is not thread-safe. Every access requires manual locking:
-```csharp
-var queue = state.Queues.GetOrAdd(recipientId, _ => new List<MessageRecord>());
-lock (queue) queue.Add(msg);
-```
-
-If **any** access site forgets the lock, you get a race condition. This is the definition of a "semantic encapsulation violation" — callers must know the locking protocol.
-
-**Risk:** Currently there are 10+ sites that access queues. Each one manually locks. Adding a new endpoint that forgets to lock = silent data corruption.
-
-**Fix:** Either:
-- (A) Encapsulate in `ShikigamiState` with `EnqueueMessage(id, msg)` / `DrainQueue(id)` that handle locking internally
-- (B) Replace `List<MessageRecord>` with `ConcurrentQueue<MessageRecord>` (but drain-all pattern needs careful handling)
-
-Option A is preferred — it also fixes M5 (encapsulation).
-
-### C4. No Input Validation Barricade on HTTP Endpoints
-**Rule violated:** design-robustcode §Barricades, §Input Validation
-
-HTTP endpoints parse JSON with no validation:
-```csharp
-var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
-var senderId = data.GetProperty("sender_id").GetString()!;  // throws if missing
-```
-
-If a client sends malformed JSON or omits a required field, `GetProperty()` throws `KeyNotFoundException` → 500 Internal Server Error with a stack trace.
-
-Only `/agents/register` has field validation (`required.Where(f => !data.TryGetProperty(f, out _))`). All other endpoints trust input blindly.
-
-**Risk:** Any malformed HTTP request crashes the endpoint. In production, this could be triggered by a bug in any Runner client, not just malicious input.
-
-**Fix:** Add a validation barricade:
-1. Create typed request DTOs for each endpoint
-2. Validate at the boundary (missing fields, invalid values, length limits)
-3. Return 400 with descriptive error messages
-4. Internal code can then trust the data
+If horde idle/backoff needs a new task status (e.g., `"retrying"`), you must find and update every comparison across 6+ files, with zero compiler help. This is the definition of "change that must NOT propagate through the interface" — but currently does.
 
 ---
 
-## Priority Roadmap
+## Metrics Summary
 
-| Phase | Items | Effort | Impact |
-|---|---|---|---|
-| 1. Safety | C3 (queue thread safety), C4 (input validation) | Small | Prevents data corruption and crashes |
-| 2. Type Safety | C1 (state enum), M1 (status enums), M3 (timestamps) | Medium | Eliminates entire class of silent bugs |
-| 3. Encapsulation | M5 (state encapsulation), M4 (drain pattern), M9 (unblock logic) | Medium | Reduces duplication, centralizes locking |
-| 4. Architecture | C2 (split MainWindow), M2 (typed DTOs), M8 (error strategy) | Large | Enables safe growth of horde/prompt features |
-| 5. Polish | M6 (shared colors), M7 (empty catches), M10 (cache claude path), M11 (typed pool input), M12 (Demeter) | Small | Code quality, maintainability |
+| Metric | Target | Actual | Status |
+|--------|--------|--------|--------|
+| Max nesting depth | ≤3 | 4-5 (CliRunner.Run, PoolEndpoints send) | Needs work |
+| Class fan-out | ≤7 | ~15 (MainWindow) | Critical |
+| Data members per class | ≤7±2 | 20+ (MainWindow), 10 (PoolRecord) | Critical / Borderline |
+| Method length | ≤200 LOC | ~160 (CliRunner.Run), ~100 (DispatchNextTask) | Borderline |
+| Cyclomatic complexity | ≤10 | ~12-15 (DispatchNextTaskAsync, LaunchPassAsync) | Needs work |
+| Acyclic dependencies | Yes | Yes | Good |
+| Consistent error handling | Required | No | Critical |
+| Status as enums | Required | No (all strings) | Critical |
 
-Phase 1 should happen before any feature work. Phase 2-3 can be incremental. Phase 4 should happen before the next major feature addition to MainWindow.
+---
+
+## Recommended Priority Order
+
+1. **Status enums** (C3/S1) — Highest ROI, protects every future change
+2. **Error handling architecture** (C2/S7) — Choose one pattern, apply everywhere
+3. **MainWindow decomposition** (C1) — Extract orchestrators, reduce fan-out
+4. **HTTP barricade validation** (S5) — Prevent crash on malformed input
+5. **Thread safety in PoolRecord** (S8) — Prevent data corruption
+6. **Typed result objects** (S2) — Replace Dictionary<string, object>
+7. **DateTime fields** (S3) — Type safety for timestamps
+8. **CliRunner nesting** (S4) — Extract event parser
+9. **Delete RunnerViewModel** (S6) — Remove dead code

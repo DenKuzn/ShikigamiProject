@@ -10,7 +10,7 @@ namespace Shikigami.Core.State;
 public sealed class ShikigamiState
 {
     public ConcurrentDictionary<string, AgentRecord> Agents { get; } = new();
-    public ConcurrentDictionary<string, List<MessageRecord>> Queues { get; } = new();
+    public ConcurrentDictionary<string, MessageQueue> Queues { get; } = new();
     public ConcurrentDictionary<string, PromptRecord> Prompts { get; } = new();
     public ConcurrentBag<TrashEntry> Trash { get; } = new();
     public ConcurrentDictionary<string, PoolRecord> Pools { get; } = new();
@@ -28,7 +28,7 @@ public sealed class ShikigamiState
 
     public ShikigamiState()
     {
-        Queues["lead"] = new List<MessageRecord>();
+        Queues["lead"] = new MessageQueue();
     }
 
     /// <summary>
@@ -104,9 +104,9 @@ public sealed class ShikigamiState
         if (!Agents.TryGetValue(agentId, out var agent)) return;
         agent.Active = false;
 
-        if (Queues.TryRemove(agentId, out var msgs))
+        if (Queues.TryRemove(agentId, out var queue))
         {
-            foreach (var msg in msgs)
+            foreach (var msg in queue.DrainAll())
                 ToTrash(msg, agentId, "agent_died");
         }
     }
@@ -136,9 +136,9 @@ public sealed class ShikigamiState
         }
 
         // Clean up queue
-        if (pool.Queues.TryRemove(agentId, out var msgs))
+        if (pool.Queues.TryRemove(agentId, out var queue))
         {
-            foreach (var msg in msgs)
+            foreach (var msg in queue.DrainAll())
                 PoolToTrash(pool, msg, agentId, "agent_died");
         }
     }

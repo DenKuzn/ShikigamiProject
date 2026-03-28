@@ -34,7 +34,7 @@ public static class AgentEndpoints
                 AgentType = data.GetProperty("agent_type").GetString()!,
             };
             state.Agents[agentId] = agent;
-            state.Queues[agentId] = new List<MessageRecord>();
+            state.Queues[agentId] = new MessageQueue();
 
             return Results.Json(new { id = agentId });
         });
@@ -85,8 +85,8 @@ public static class AgentEndpoints
                 return Results.Json(new { error = "Recipient not found" }, statusCode: 404);
             }
 
-            var queue = state.Queues.GetOrAdd(recipientId, _ => new List<MessageRecord>());
-            lock (queue) queue.Add(msg);
+            var queue = state.Queues.GetOrAdd(recipientId, _ => new MessageQueue());
+            queue.Enqueue(msg);
             return Results.Json(new { ok = true });
         });
 
@@ -95,19 +95,9 @@ public static class AgentEndpoints
             if (agentId != "lead" && (!state.Agents.TryGetValue(agentId, out var a) || !a.Active))
                 return Results.Json(new { error = "Agent not found" }, statusCode: 404);
 
-            List<MessageRecord> messages;
-            if (state.Queues.TryGetValue(agentId, out var queue))
-            {
-                lock (queue)
-                {
-                    messages = new List<MessageRecord>(queue);
-                    queue.Clear();
-                }
-            }
-            else
-            {
-                messages = new();
-            }
+            var messages = state.Queues.TryGetValue(agentId, out var queue)
+                ? queue.DrainAll()
+                : new List<MessageRecord>();
 
             foreach (var msg in messages)
                 state.ToTrash(msg, agentId, "read");
