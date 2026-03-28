@@ -243,6 +243,8 @@ public partial class MainWindow : Window
             var title = task.GetProperty("title").GetString();
             var description = task.GetProperty("description").GetString();
 
+            _memory.BeginTask(_currentTaskId!);
+
             AppendLog($"[horde] Task: {title}", "task");
             await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "working", $"Task: {title}");
 
@@ -267,6 +269,8 @@ public partial class MainWindow : Window
 
                 Dispatcher.Invoke(async () =>
                 {
+                    _memory.FlushEvents(result.Events, _iteration);
+
                     if (result.Cost.HasValue)
                     {
                         _totalCost += result.Cost.Value;
@@ -274,8 +278,6 @@ public partial class MainWindow : Window
                         _ = _mcp.SubmitCostAsync(_totalCost);
                     }
 
-                    _tasksCompleted++;
-                    StatTasks.Text = _tasksCompleted.ToString();
                     _running = false;
                     StopButton.IsEnabled = false;
                     StopButton.Opacity = 0.25;
@@ -304,12 +306,14 @@ public partial class MainWindow : Window
                     }
                     else if (result.ResultText.Contains("TASK_COMPLETED"))
                     {
+                        _tasksCompleted++;
+                        StatTasks.Text = _tasksCompleted.ToString();
                         AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
                         await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
                     }
                     else
                     {
-                        // No marker — re-launch once for correction
+                        // No marker — re-launch once for correction with history
                         if (_markerRetries == 0)
                         {
                             _markerRetries++;
@@ -319,7 +323,11 @@ public partial class MainWindow : Window
                             _running = true;
                             StopButton.IsEnabled = true;
                             StopButton.Opacity = 1.0;
-                            var correctionPrompt = taskPrompt +
+                            var historyJson = _memory.CurrentTaskJson();
+                            var correctionPrompt = taskPrompt;
+                            if (!string.IsNullOrEmpty(historyJson))
+                                correctionPrompt += $"\n\n## Full History (current task)\n```json\n{historyJson}\n```";
+                            correctionPrompt +=
                                 "\n\nYou did NOT include a completion marker in your previous response. " +
                                 "You MUST end with one of:\n" +
                                 "- TASK_COMPLETED\n" +
@@ -332,6 +340,8 @@ public partial class MainWindow : Window
                                 });
                                 Dispatcher.Invoke(async () =>
                                 {
+                                    _memory.FlushEvents(retryResult.Events, _iteration);
+
                                     if (retryResult.Cost.HasValue)
                                     {
                                         _totalCost += retryResult.Cost.Value;
@@ -344,6 +354,8 @@ public partial class MainWindow : Window
 
                                     if (retryResult.ResultText.Contains("TASK_COMPLETED"))
                                     {
+                                        _tasksCompleted++;
+                                        StatTasks.Text = _tasksCompleted.ToString();
                                         AppendLog($"[horde] Task completed: {Truncate(retryResult.ResultText, 200)}", "result");
                                         await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, retryResult.ResultText);
                                     }
@@ -737,7 +749,19 @@ public partial class MainWindow : Window
     private async Task RelaunchHordeTaskAsync(string suffix)
     {
         if (_currentTaskPrompt == null) return;
-        var prompt = _currentTaskPrompt + suffix;
+
+        // Build prompt: base task + history (if any) + suffix
+        var historyJson = _memory.CurrentTaskJson();
+        var parts = new List<string> { _currentTaskPrompt };
+        if (!string.IsNullOrEmpty(historyJson))
+        {
+            parts.Add($"## Full History (current task)\n```json\n{historyJson}\n```");
+            parts.Add("Continue from where you left off. " +
+                       "Do NOT re-read files you already have in history.");
+        }
+        parts.Add(suffix.TrimStart('\n'));
+        var prompt = string.Join("\n\n", parts);
+
         _running = true;
         _userStopped = false;
         _iteration++;
@@ -758,6 +782,8 @@ public partial class MainWindow : Window
 
             Dispatcher.Invoke(async () =>
             {
+                _memory.FlushEvents(result.Events, _iteration);
+
                 if (result.Cost.HasValue)
                 {
                     _totalCost += result.Cost.Value;
@@ -793,6 +819,8 @@ public partial class MainWindow : Window
                 }
                 else if (result.ResultText.Contains("TASK_COMPLETED"))
                 {
+                    _tasksCompleted++;
+                    StatTasks.Text = _tasksCompleted.ToString();
                     AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
                     await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
                 }

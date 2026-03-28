@@ -304,7 +304,7 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize p
 | Marker validation (horde) | Checks TASK_FAILED → TASK_COMPLETED; no marker = 1 retry then fail; horde-specific Stop/Message dispatch via `RelaunchHordeTaskAsync` |
 | Horde waiting | DispatcherTimer poll (5s), distinguishes blocked/done/aborted, green dot + amber header with blocked count |
 | Prompts folder | Prompt templates moved to `Prompts/` subdirectory next to exe |
-| ShikigamiContextMemory | Filtered history (thinking, tool calls, text, user input, messages) accumulated across CLI passes, serialized as JSON into prompt for continuation |
+| ShikigamiContextMemory | Filtered history (thinking, tool calls, text, user input, messages) accumulated across CLI passes, serialized as JSON into prompt for continuation. Horde mode: `BeginTask()`/`CurrentTaskJson()` scope history per task; `ToJson()` returns full history for debugging. `_tasksCompleted` only increments on TASK_COMPLETED (not on fail/error). Fixed: `_flushOffset` removed — each CLI run returns fresh Events list |
 
 ### TODO
 | Feature | Details |

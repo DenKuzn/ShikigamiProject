@@ -6,20 +6,35 @@ namespace Shikigami.Runner.Services;
 /// Accumulates filtered conversation history across CLI passes.
 /// event_log: raw events from each CLI pass.
 /// entries: cleaned context used for prompt building.
+///
+/// Horde mode: BeginTask() marks task boundaries. CurrentTaskJson() returns
+/// only entries for the current task. Full history is preserved for debugging.
 /// </summary>
 public sealed class ShikigamiContextMemory
 {
     private readonly List<Dictionary<string, object>> _entries = new();
-    private int _flushOffset;
+    private int _currentTaskStartIndex;
 
     public IReadOnlyList<Dictionary<string, object>> Entries => _entries;
 
     /// <summary>
-    /// Extract useful entries from raw events (since last flush) into clean context.
+    /// Mark the beginning of a new horde task.
+    /// CurrentTaskJson() will return only entries after this point.
+    /// Full history is preserved in Entries / ToJson().
+    /// </summary>
+    public void BeginTask(string taskId)
+    {
+        _currentTaskStartIndex = _entries.Count;
+        _entries.Add(new() { ["role"] = "task_boundary", ["task_id"] = taskId });
+    }
+
+    /// <summary>
+    /// Extract useful entries from raw events into clean context.
+    /// Each result.Events is a fresh list from a single CLI run.
     /// </summary>
     public void FlushEvents(List<Dictionary<string, object>> eventLog, int iteration)
     {
-        for (var i = _flushOffset; i < eventLog.Count; i++)
+        for (var i = 0; i < eventLog.Count; i++)
         {
             var evt = eventLog[i];
             var type = evt.TryGetValue("type", out var t) ? t.ToString() : null;
@@ -56,7 +71,6 @@ public sealed class ShikigamiContextMemory
                     break;
             }
         }
-        _flushOffset = eventLog.Count;
         _entries.Add(new() { ["role"] = "turn_boundary", ["turn"] = iteration });
     }
 
@@ -78,9 +92,28 @@ public sealed class ShikigamiContextMemory
     public void Clear()
     {
         _entries.Clear();
-        _flushOffset = 0;
+        _currentTaskStartIndex = 0;
     }
 
+    /// <summary>
+    /// Serialize only entries for the current task (after the last BeginTask call).
+    /// Used in horde mode to scope history to the active task.
+    /// </summary>
+    public string CurrentTaskJson()
+    {
+        var start = _currentTaskStartIndex + 1; // skip task_boundary marker
+        if (start >= _entries.Count) return "";
+        var taskEntries = _entries.GetRange(start, _entries.Count - start);
+        return JsonSerializer.Serialize(taskEntries, new JsonSerializerOptions
+        {
+            WriteIndented = false,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        });
+    }
+
+    /// <summary>
+    /// Serialize ALL entries (full history across all tasks). For prompt mode and debugging.
+    /// </summary>
     public string ToJson()
     {
         return JsonSerializer.Serialize(_entries, new JsonSerializerOptions
