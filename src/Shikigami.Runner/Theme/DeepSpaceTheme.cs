@@ -20,6 +20,7 @@ public static class DeepSpaceTheme
     public static readonly Color Amber     = (Color)ColorConverter.ConvertFromString("#e5a000");
     public static readonly Color AmberDim  = (Color)ColorConverter.ConvertFromString("#1f1800");
     public static readonly Color Green     = (Color)ColorConverter.ConvertFromString("#7dff7d");
+    public static readonly Color GreenDim  = (Color)ColorConverter.ConvertFromString("#1a3a1a");
     public static readonly Color Red       = (Color)ColorConverter.ConvertFromString("#ff5c5c");
     public static readonly Color Lavender  = (Color)ColorConverter.ConvertFromString("#b4a7d6");
     public static readonly Color Peach     = (Color)ColorConverter.ConvertFromString("#ffab91");
@@ -38,6 +39,7 @@ public static class DeepSpaceTheme
     public static readonly SolidColorBrush AmberBrush     = Freeze(new SolidColorBrush(Amber));
     public static readonly SolidColorBrush AmberDimBrush  = Freeze(new SolidColorBrush(AmberDim));
     public static readonly SolidColorBrush GreenBrush     = Freeze(new SolidColorBrush(Green));
+    public static readonly SolidColorBrush GreenDimBrush  = Freeze(new SolidColorBrush(GreenDim));
     public static readonly SolidColorBrush RedBrush       = Freeze(new SolidColorBrush(Red));
     public static readonly SolidColorBrush LavenderBrush  = Freeze(new SolidColorBrush(Lavender));
     public static readonly SolidColorBrush PeachBrush     = Freeze(new SolidColorBrush(Peach));

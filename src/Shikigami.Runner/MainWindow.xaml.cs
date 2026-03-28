@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     private bool _waitingInput;
     private bool _userStopped;
     private bool _inputIsStop;
+    private bool _idle;
+    private bool _keepActive;
+    private DispatcherTimer? _closeTimer;
     private string? _originalPrompt;
     private PromptBuilder? _promptBuilder;
     private List<Dictionary<string, object>> _allEvents = new();
@@ -61,10 +64,13 @@ public partial class MainWindow : Window
             _dotOn = !_dotOn;
             if (_waitingInput)
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.AmberBrush : DeepSpaceTheme.AmberDimBrush;
+            else if (_idle)
+                DotIndicator.Fill = _dotOn ? DeepSpaceTheme.GreenBrush : DeepSpaceTheme.GreenDimBrush;
             else
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.TealBrush : DeepSpaceTheme.TealDimBrush;
         };
         _dotTimer.Start();
+
 
         // MCP message polling
         _mcpPollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
@@ -120,6 +126,7 @@ public partial class MainWindow : Window
     private async Task LaunchPassAsync()
     {
         if (_promptBuilder == null) return;
+        if (_idle) ExitIdle();
         _running = true;
         _userStopped = false;
         _iteration++;
@@ -172,12 +179,33 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                HeaderStatus.Text = "completed";
-                HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
-                AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
+                // Check for AGENT_IDLE marker
+                if (result.ResultText.Contains("AGENT_IDLE"))
+                {
+                    AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
+                    _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
+                    EnterIdle();
+                    return;
+                }
 
+                AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
                 _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
-                _ = _mcp.UpdateStateAsync("completed");
+
+                if (_keepActive)
+                {
+                    EnterIdle();
+                }
+                else
+                {
+                    HeaderStatus.Text = "completed";
+                    HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+                    _ = _mcp.UpdateStateAsync("completed");
+                    AppendLog("[shikigami] Closing in 10 seconds...", "sys");
+
+                    _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+                    _closeTimer.Tick += (_, _) => { _closeTimer.Stop(); _closeTimer = null; Close(); };
+                    _closeTimer.Start();
+                }
             });
         });
     }
@@ -361,18 +389,69 @@ public partial class MainWindow : Window
                     ["time"] = DateTime.Now.ToString("HH:mm:ss"),
                 });
 
-                // Cancel input wait if active
+                // Cancel input/idle wait if active
                 if (_waitingInput)
                 {
                     _waitingInput = false;
                     InputPanel.Visibility = Visibility.Collapsed;
                     InputBox.Clear();
                 }
+                if (_idle) ExitIdle();
 
                 await LaunchPassAsync();
             }
         }
         catch { /* polling failure is not critical */ }
+    }
+
+    private void EnterIdle()
+    {
+        _idle = true;
+
+        var sep = new string('\u2500', 54);
+        AppendLog(sep, "sys");
+        AppendLog("  \u23f3 AGENT IDLE — waiting for messages or new instructions", "result");
+        AppendLog("  Type below or send a message via MCP.", "sys");
+        AppendLog(sep, "sys");
+
+        HeaderStatus.Text = "idle";
+        HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+        _ = _mcp.UpdateStateAsync("idle", "Waiting for messages");
+
+        InputPanel.Visibility = Visibility.Visible;
+        InputBox.Focus();
+    }
+
+    private void ExitIdle()
+    {
+        _idle = false;
+        InputPanel.Visibility = Visibility.Collapsed;
+        InputBox.Clear();
+    }
+
+    private void KeepActiveButton_Click(object sender, RoutedEventArgs e)
+    {
+        _keepActive = !_keepActive;
+        if (_keepActive)
+        {
+            KeepActiveButton.Background = DeepSpaceTheme.TealDimBrush;
+            KeepActiveButton.Foreground = DeepSpaceTheme.TealBrush;
+            KeepActiveButton.BorderBrush = DeepSpaceTheme.TealBrush;
+
+            // Cancel pending close and enter idle
+            if (_closeTimer != null)
+            {
+                _closeTimer.Stop();
+                _closeTimer = null;
+                EnterIdle();
+            }
+        }
+        else
+        {
+            KeepActiveButton.Background = DeepSpaceTheme.BgPanelBrush;
+            KeepActiveButton.Foreground = DeepSpaceTheme.FgDimBrush;
+            KeepActiveButton.BorderBrush = DeepSpaceTheme.FgDimBrush;
+        }
     }
 
     private void StopButton_Click(object sender, RoutedEventArgs e)

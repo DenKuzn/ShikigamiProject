@@ -28,6 +28,10 @@
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="KeepActiveButton" Content="KEEP ACTIVE"
+                            Background="#0f1420" Foreground="#4a5a6e" FontFamily="Bahnschrift" FontSize="10"
+                            Padding="10,4" Margin="0,0,8,0" BorderThickness="1" BorderBrush="#4a5a6e"
+                            Cursor="Hand" Click="KeepActiveButton_Click"/>
                     <Button x:Name="StopButton" Content="■ STOP" Visibility="Collapsed"
                             Background="#3a1010" Foreground="#ff5c5c" FontFamily="Bahnschrift" FontSize="10"
                             Padding="10,4" Margin="0,0,12,0" BorderThickness="1" BorderBrush="#ff5c5c"
