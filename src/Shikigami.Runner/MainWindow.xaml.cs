@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private int _tasksCompleted;
     private bool _running;
     private bool _waitingInput;
+    private bool _userStopped;
+    private bool _inputIsStop;
     private string? _originalPrompt;
     private PromptBuilder? _promptBuilder;
     private List<Dictionary<string, object>> _allEvents = new();
@@ -119,10 +121,12 @@ public partial class MainWindow : Window
     {
         if (_promptBuilder == null) return;
         _running = true;
+        _userStopped = false;
         _iteration++;
         StatIteration.Text = _iteration.ToString();
         HeaderStatus.Text = "working";
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
+        StopButton.Visibility = Visibility.Visible;
         await _mcp.UpdateStateAsync("working", $"Iteration {_iteration}");
 
         var builtPrompt = _promptBuilder.Build(_iteration, _allEvents);
@@ -146,6 +150,15 @@ public partial class MainWindow : Window
                 }
 
                 _running = false;
+                StopButton.Visibility = Visibility.Collapsed;
+
+                // User pressed Stop → show input panel for correction
+                if (_userStopped)
+                {
+                    _userStopped = false;
+                    AskUserAfterStop();
+                    return;
+                }
 
                 // Check for USER_INPUT_REQUIRED marker
                 if (result.ResultText.Contains("USER_INPUT_REQUIRED"))
@@ -203,10 +216,12 @@ public partial class MainWindow : Window
         var taskPrompt = PromptBuilder.BuildTaskPrompt(
             title!, description!, _mcp.Port!.Value, agentId, _args.PoolId!, _args.LeadId);
         _running = true;
+        _userStopped = false;
         _iteration++;
         StatIteration.Text = _iteration.ToString();
         HeaderStatus.Text = "working";
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
+        StopButton.Visibility = Visibility.Visible;
 
         await Task.Run(() =>
         {
@@ -227,6 +242,14 @@ public partial class MainWindow : Window
                 _tasksCompleted++;
                 StatTasks.Text = _tasksCompleted.ToString();
                 _running = false;
+                StopButton.Visibility = Visibility.Collapsed;
+
+                if (_userStopped)
+                {
+                    _userStopped = false;
+                    AskUserAfterStop();
+                    return;
+                }
 
                 if (result.Error != null)
                 {
@@ -352,6 +375,36 @@ public partial class MainWindow : Window
         catch { /* polling failure is not critical */ }
     }
 
+    private void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_running) return;
+        _userStopped = true;
+        StopButton.IsEnabled = false;
+        StopButton.Content = "STOPPING...";
+        _cli.Kill();
+    }
+
+    private void AskUserAfterStop()
+    {
+        _waitingInput = true;
+        _inputIsStop = true;
+        StopButton.IsEnabled = true;
+        StopButton.Content = "■ STOP";
+
+        var sep = new string('\u2500', 54);
+        AppendLog(sep, "sys");
+        AppendLog("  \u26a0 STOPPED BY USER", "error");
+        AppendLog("  Enter correction or instructions below:", "task");
+        AppendLog(sep, "sys");
+
+        HeaderStatus.Text = "stopped — awaiting input";
+        HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
+        _ = _mcp.UpdateStateAsync("waiting", "Stopped by user, awaiting correction");
+
+        InputPanel.Visibility = Visibility.Visible;
+        InputBox.Focus();
+    }
+
     private void AskUser(string question)
     {
         _waitingInput = true;
@@ -400,15 +453,18 @@ public partial class MainWindow : Window
         InputBox.Clear();
         InputPanel.Visibility = Visibility.Collapsed;
 
+        var isStop = _inputIsStop;
+        _inputIsStop = false;
+
         var sep = new string('\u2500', 54);
         AppendLog(sep, "sys");
-        AppendLog("  YOUR ANSWER:", "result");
+        AppendLog(isStop ? "  YOUR CORRECTION:" : "  YOUR ANSWER:", "result");
         AppendLog($"  {text}", "result");
         AppendLog(sep, "sys");
 
         _allEvents.Add(new Dictionary<string, object>
         {
-            ["type"] = "user_input",
+            ["type"] = isStop ? "user_stop" : "user_input",
             ["text"] = text,
             ["time"] = DateTime.Now.ToString("HH:mm:ss"),
         });

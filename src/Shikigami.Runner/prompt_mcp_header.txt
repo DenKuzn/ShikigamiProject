@@ -4,15 +4,15 @@
 - **Your Lead ID**: {lead_id}
 
 ### Send message
-CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.
+CRITICAL: Use exactly this pattern — printf piped to curl. Direct curl -d breaks Cyrillic on Windows.
 Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID. Replace YOUR_MESSAGE with your text.
-```powershell
-powershell -NoProfile -Command "$b = @{sender_id='{agent_id}'; recipient_id='{lead_id}'; text='YOUR_MESSAGE'} | ConvertTo-Json; Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/send' -Method POST -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))"
+```bash
+printf '{"sender_id":"{agent_id}","recipient_id":"{lead_id}","text":"YOUR_MESSAGE"}' | curl -s -X POST http://127.0.0.1:{port}/messages/send -H "Content-Type: application/json; charset=utf-8" -d @-
 ```
 
 ### Check your messages
-```powershell
-powershell -NoProfile -Command "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/{agent_id}'"
+```bash
+curl -s "http://127.0.0.1:{port}/messages/{agent_id}"
 ```
 
 ### Discover other agents

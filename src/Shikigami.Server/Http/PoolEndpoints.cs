@@ -130,8 +130,7 @@ public static class PoolEndpoints
                 AgentType = data.GetProperty("agent_type").GetString()!,
                 Pid = data.GetProperty("pid").GetInt32(),
             };
-            if (!pool.Queues.ContainsKey(agentId))
-                pool.Queues[agentId] = new List<MessageRecord>();
+            pool.Queues.GetOrAdd(agentId, _ => new List<MessageRecord>());
 
             return Results.Json(new { ok = true });
         });
@@ -159,7 +158,7 @@ public static class PoolEndpoints
 
             agentInfo.Active = false;
             agentInfo.State = "completed";
-            if (pool.Queues.Remove(agentId, out var msgs))
+            if (pool.Queues.TryRemove(agentId, out var msgs))
                 foreach (var msg in msgs)
                     ShikigamiState.PoolToTrash(pool, msg, agentId, "agent_unregistered");
 
@@ -182,22 +181,22 @@ public static class PoolEndpoints
                 {
                     if (aid != senderId && ai.Active)
                     {
-                        if (!pool.Queues.ContainsKey(aid)) pool.Queues[aid] = new();
-                        pool.Queues[aid].Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
+                        var q = pool.Queues.GetOrAdd(aid, _ => new List<MessageRecord>());
+                        lock (q) q.Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
                     }
                 }
-                if (!pool.Queues.ContainsKey("lead")) pool.Queues["lead"] = new();
-                pool.Queues["lead"].Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
+                var leadQ = pool.Queues.GetOrAdd("lead", _ => new List<MessageRecord>());
+                lock (leadQ) leadQ.Add(new MessageRecord { SenderId = senderId, Text = msg.Text });
             }
             else if (recipientId == "lead")
             {
-                if (!pool.Queues.ContainsKey("lead")) pool.Queues["lead"] = new();
-                pool.Queues["lead"].Add(msg);
+                var q = pool.Queues.GetOrAdd("lead", _ => new List<MessageRecord>());
+                lock (q) q.Add(msg);
             }
             else if (pool.Agents.ContainsKey(recipientId))
             {
-                if (!pool.Queues.ContainsKey(recipientId)) pool.Queues[recipientId] = new();
-                pool.Queues[recipientId].Add(msg);
+                var q = pool.Queues.GetOrAdd(recipientId, _ => new List<MessageRecord>());
+                lock (q) q.Add(msg);
             }
             else
             {
@@ -217,8 +216,11 @@ public static class PoolEndpoints
             List<MessageRecord> messages;
             if (pool.Queues.TryGetValue(agentId, out var queue))
             {
-                messages = new List<MessageRecord>(queue);
-                queue.Clear();
+                lock (queue)
+                {
+                    messages = new List<MessageRecord>(queue);
+                    queue.Clear();
+                }
             }
             else
             {

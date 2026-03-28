@@ -321,8 +321,11 @@ public sealed class ShikigamiMcpTools
         List<MessageRecord> messages;
         if (pool.Queues.TryGetValue("lead", out var queue))
         {
-            messages = new List<MessageRecord>(queue);
-            queue.Clear();
+            lock (queue)
+            {
+                messages = new List<MessageRecord>(queue);
+                queue.Clear();
+            }
         }
         else
         {
@@ -347,8 +350,8 @@ public sealed class ShikigamiMcpTools
             return JsonSerializer.Serialize(new { error = "Recipient not found in pool" });
         }
 
-        if (!pool.Queues.ContainsKey(recipient_id)) pool.Queues[recipient_id] = new();
-        pool.Queues[recipient_id].Add(msg);
+        var queue = pool.Queues.GetOrAdd(recipient_id, _ => new List<MessageRecord>());
+        lock (queue) queue.Add(msg);
         return JsonSerializer.Serialize(new { ok = true });
     }
 }

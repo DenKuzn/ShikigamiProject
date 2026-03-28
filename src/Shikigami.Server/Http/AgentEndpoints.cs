@@ -141,9 +141,7 @@ public static class AgentEndpoints
             // Try regular agents first
             if (state.Agents.TryGetValue(id, out var agent))
             {
-                var oldCost = agent.CostUsd;
-                agent.CostUsd = cost;
-                state.AddCost(cost - oldCost);
+                state.UpdateAgentCost(agent, cost);
                 return Results.Json(new { ok = true, agent_cost = cost, total_cost = state.TotalCost });
             }
 
@@ -152,9 +150,7 @@ public static class AgentEndpoints
             {
                 if (pool.Agents.TryGetValue(id, out var poolAgent))
                 {
-                    var oldCost = poolAgent.CostUsd;
-                    poolAgent.CostUsd = cost;
-                    state.AddCost(cost - oldCost);
+                    state.UpdatePoolAgentCost(poolAgent, cost);
                     return Results.Json(new { ok = true, agent_cost = cost, total_cost = state.TotalCost });
                 }
             }

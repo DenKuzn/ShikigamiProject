@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Shikigami.Core.Models;
 
 /// <summary>
@@ -8,10 +10,10 @@ public sealed class PoolRecord
     public required string Id { get; set; }
     public string Name { get; set; } = "";
     public string Status { get; set; } = "in_progress";
-    public Dictionary<string, PoolAgentInfo> Agents { get; set; } = new();
-    public Dictionary<string, TaskRecord> Tasks { get; set; } = new();
+    public ConcurrentDictionary<string, PoolAgentInfo> Agents { get; set; } = new();
+    public ConcurrentDictionary<string, TaskRecord> Tasks { get; set; } = new();
     public List<string> TaskOrder { get; set; } = new();
-    public Dictionary<string, List<MessageRecord>> Queues { get; set; } = new() { ["lead"] = new() };
+    public ConcurrentDictionary<string, List<MessageRecord>> Queues { get; set; } = new() { ["lead"] = new() };
     public List<TrashEntry> Trash { get; set; } = new();
     public string CreatedAt { get; set; } = DateTime.UtcNow.ToString("o");
     public string? CompletedAt { get; set; }

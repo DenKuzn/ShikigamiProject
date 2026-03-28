@@ -27,8 +27,14 @@
                         <TextBlock x:Name="HeaderName" Text="Shikigami" FontFamily="Bahnschrift" FontSize="14" FontWeight="Bold" Foreground="#00e5c0"/>
                     </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="HeaderStatus" Text="starting" FontFamily="Consolas" FontSize="11"
-                           Foreground="#4a5a6e" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="StopButton" Content="■ STOP" Visibility="Collapsed"
+                            Background="#3a1010" Foreground="#ff5c5c" FontFamily="Bahnschrift" FontSize="10"
+                            Padding="10,4" Margin="0,0,12,0" BorderThickness="1" BorderBrush="#ff5c5c"
+                            Cursor="Hand" Click="StopButton_Click"/>
+                    <TextBlock x:Name="HeaderStatus" Text="starting" FontFamily="Consolas" FontSize="11"
+                               Foreground="#4a5a6e"/>
+                </StackPanel>
             </Grid>
         </Border>
         <Border Grid.Row="0" Background="#005c4d" Height="1" VerticalAlignment="Bottom"/>

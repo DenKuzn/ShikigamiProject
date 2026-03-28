@@ -6,12 +6,12 @@
 - **Pool ID**: {pool_id}
 
 ### Send message
-CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.
-```powershell
-powershell -NoProfile -Command "$b = @{sender_id='{agent_id}'; recipient_id='<target>'; text='YOUR_MESSAGE'} | ConvertTo-Json; Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/pools/{pool_id}/messages/send' -Method POST -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))"
+CRITICAL: Use exactly this pattern — printf piped to curl. Direct curl -d breaks Cyrillic on Windows.
+```bash
+printf '{"sender_id":"{agent_id}","recipient_id":"<target>","text":"YOUR_MESSAGE"}' | curl -s -X POST http://127.0.0.1:{port}/pools/{pool_id}/messages/send -H "Content-Type: application/json; charset=utf-8" -d @-
 ```
 
 ### Check messages
-```powershell
-powershell -NoProfile -Command "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}'"
+```bash
+curl -s "http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}"
 ```

@@ -83,6 +83,8 @@ public sealed class PromptBuilder
             if (string.IsNullOrEmpty(text)) continue;
             if (type == "user_input")
                 interactions.Add($"- User answered: {text}");
+            else if (type == "user_stop")
+                interactions.Add($"- **User stopped the agent and instructed:** {text}");
             else if (type == "mcp_message")
                 interactions.Add($"- {text}");
         }
@@ -183,16 +185,16 @@ public sealed class PromptBuilder
         "- **Your Agent ID**: {agent_id}\n" +
         "- **Your Lead ID**: {lead_id}\n\n" +
         "### Send message\n" +
-        "CRITICAL: Do NOT use curl — it breaks Unicode on Windows. Use PowerShell instead.\n" +
+        "CRITICAL: Use exactly this pattern — printf piped to curl. Direct curl -d breaks Cyrillic on Windows.\n" +
         "Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID. Replace YOUR_MESSAGE with your text.\n" +
-        "```powershell\n" +
-        "powershell -NoProfile -Command \"$b = @{sender_id='{agent_id}'; recipient_id='{lead_id}'; text='YOUR_MESSAGE'} | ConvertTo-Json; " +
-        "Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/send' -Method POST " +
-        "-ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($b))\"\n" +
+        "```bash\n" +
+        "printf '{\"sender_id\":\"{agent_id}\",\"recipient_id\":\"{lead_id}\",\"text\":\"YOUR_MESSAGE\"}' " +
+        "| curl -s -X POST http://127.0.0.1:{port}/messages/send " +
+        "-H \"Content-Type: application/json; charset=utf-8\" -d @-\n" +
         "```\n\n" +
         "### Check your messages\n" +
-        "```powershell\n" +
-        "powershell -NoProfile -Command \"Invoke-RestMethod -Uri 'http://127.0.0.1:{port}/messages/{agent_id}'\"\n" +
+        "```bash\n" +
+        "curl -s \"http://127.0.0.1:{port}/messages/{agent_id}\"\n" +
         "```\n\n" +
         "### Discover other agents\n" +
         "`curl -s http://127.0.0.1:{port}/agents` — returns `[{\"id\",\"name\",\"agent_type\",\"task\"}]`. Use `id` as `recipient_id`.\n\n" +

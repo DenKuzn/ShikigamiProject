@@ -40,6 +40,30 @@ public sealed class ShikigamiState
     }
 
     /// <summary>
+    /// Atomically update an agent's cost and adjust the total by the delta.
+    /// </summary>
+    public void UpdateAgentCost(AgentRecord agent, double newCost)
+    {
+        lock (_costLock)
+        {
+            _totalCost += newCost - agent.CostUsd;
+            agent.CostUsd = newCost;
+        }
+    }
+
+    /// <summary>
+    /// Atomically update a pool agent's cost and adjust the total by the delta.
+    /// </summary>
+    public void UpdatePoolAgentCost(PoolAgentInfo agent, double newCost)
+    {
+        lock (_costLock)
+        {
+            _totalCost += newCost - agent.CostUsd;
+            agent.CostUsd = newCost;
+        }
+    }
+
+    /// <summary>
     /// Move a message to the trash bin.
     /// </summary>
     public void ToTrash(MessageRecord msg, string recipientId, string reason)
@@ -112,7 +136,7 @@ public sealed class ShikigamiState
         }
 
         // Clean up queue
-        if (pool.Queues.Remove(agentId, out var msgs))
+        if (pool.Queues.TryRemove(agentId, out var msgs))
         {
             foreach (var msg in msgs)
                 PoolToTrash(pool, msg, agentId, "agent_died");
