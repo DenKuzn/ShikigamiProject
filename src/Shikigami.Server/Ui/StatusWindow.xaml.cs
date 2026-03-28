@@ -15,14 +15,16 @@ public partial class StatusWindow : Window
     private readonly Forms.NotifyIcon _trayIcon;
     private bool _dotOn;
 
-    // Brushes for agent list
-    private static readonly SolidColorBrush TealBrush = Frozen("#00e5c0");
-    private static readonly SolidColorBrush FgBrush = Frozen("#b8c5d6");
-    private static readonly SolidColorBrush FgDimBrush = Frozen("#4a5a6e");
-    private static readonly SolidColorBrush GreenBrush = Frozen("#7dff7d");
-    private static readonly SolidColorBrush AmberBrush = Frozen("#e5a000");
-    private static readonly SolidColorBrush RedBrush = Frozen("#ff5c5c");
-    private static readonly SolidColorBrush TealDimBrush = Frozen("#005c4d");
+    // JJK Domain Expansion brushes
+    private static readonly SolidColorBrush TealBrush = Frozen("#8B5CF6");
+    private static readonly SolidColorBrush FgBrush = Frozen("#B8C2D0");
+    private static readonly SolidColorBrush FgDimBrush = Frozen("#4A3D65");
+    private static readonly SolidColorBrush GreenBrush = Frozen("#34D399");
+    private static readonly SolidColorBrush AmberBrush = Frozen("#F59E0B");
+    private static readonly SolidColorBrush RedBrush = Frozen("#EF4444");
+    private static readonly SolidColorBrush TealDimBrush = Frozen("#2D1B69");
+    private static readonly SolidColorBrush CyanBrush = Frozen("#60A5FA");
+    private static readonly SolidColorBrush LavenderBrush = Frozen("#A78BFA");
 
     public StatusWindow(ShikigamiState state)
     {
@@ -36,7 +38,7 @@ public partial class StatusWindow : Window
         _trayIcon = new Forms.NotifyIcon
         {
             Icon = EmojiIcon.CreateDrawingIcon(),
-            Text = "ShikigamiMCP",
+            Text = "Shikigami MCP Sorcerer",
             Visible = false,
         };
         _trayIcon.DoubleClick += (_, _) => ShowFromTray();
@@ -110,7 +112,7 @@ public partial class StatusWindow : Window
         CostDetailLabel.Text = billed > 0 ? $"{billed} shikigami billed" : "";
 
         // Tray tooltip
-        _trayIcon.Text = $"ShikigamiMCP :{_state.HttpPort}  |  {active.Count} active  |  ${_state.TotalCost:F2}";
+        _trayIcon.Text = $"Shikigami MCP Sorcerer :{_state.HttpPort}  |  {active.Count} active  |  ${_state.TotalCost:F2}";
 
         // Pools
         if (_state.Pools.IsEmpty)
@@ -120,7 +122,7 @@ public partial class StatusWindow : Window
         else
         {
             PoolsSection.Visibility = Visibility.Visible;
-            PoolsHeader.Text = $"HORDE POOLS ({_state.Pools.Count})";
+            PoolsHeader.Text = $"軍 勢 ({_state.Pools.Count})";
             RefreshPools();
         }
 
@@ -145,9 +147,9 @@ public partial class StatusWindow : Window
             };
 
             var panel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, Margin = new Thickness(6, 2, 0, 2) };
-            panel.Children.Add(MakeText($"{pool.Name}  ", Frozen("#5ec4ff"), 9, true));
-            panel.Children.Add(MakeText($"{done}/{total}  ", TealBrush, 8));
-            panel.Children.Add(MakeText(pool.Status, statusColor, 8));
+            panel.Children.Add(MakeText($"{pool.Name}  ", CyanBrush, 11, true));
+            panel.Children.Add(MakeText($"{done}/{total}  ", TealBrush, 10));
+            panel.Children.Add(MakeText(pool.Status, statusColor, 10));
             PoolsList.Items.Add(panel);
         }
     }

@@ -1,136 +1,251 @@
 <Window x:Class="Shikigami.Server.Ui.StatusWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="&#x2B21; ShikigamiMCP" Width="400" Height="530"
-        ResizeMode="NoResize" Background="#0b0e17"
+        Title="&#x546A; Shikigami MCP Sorcerer" Width="420" Height="580"
+        ResizeMode="NoResize" Background="#08060F"
         WindowStartupLocation="CenterScreen">
 
+    <!-- ═══ Domain Expansion animations ═══ -->
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetName="SealRotation"
+                        Storyboard.TargetProperty="Angle"
+                        From="0" To="360" Duration="0:2:00"
+                        RepeatBehavior="Forever"/>
+                    <DoubleAnimation Storyboard.TargetName="CornerMarks"
+                        Storyboard.TargetProperty="Opacity"
+                        From="0.55" To="1.0" Duration="0:0:3.5"
+                        AutoReverse="True" RepeatBehavior="Forever"/>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
+
     <Window.Resources>
-        <!-- Shared font families -->
-        <FontFamily x:Key="FontUi">Bahnschrift</FontFamily>
+        <FontFamily x:Key="FontUi">Yu Gothic UI</FontFamily>
         <FontFamily x:Key="FontMono">Consolas</FontFamily>
 
-        <!-- Colors -->
-        <SolidColorBrush x:Key="Bg" Color="#0b0e17"/>
-        <SolidColorBrush x:Key="BgDark" Color="#060a10"/>
-        <SolidColorBrush x:Key="BgSurface" Color="#161c2e"/>
-        <SolidColorBrush x:Key="BgPanel" Color="#0f1420"/>
-        <SolidColorBrush x:Key="Fg" Color="#b8c5d6"/>
-        <SolidColorBrush x:Key="FgDim" Color="#4a5a6e"/>
-        <SolidColorBrush x:Key="FgBright" Color="#e4eaf4"/>
-        <SolidColorBrush x:Key="Teal" Color="#00e5c0"/>
-        <SolidColorBrush x:Key="TealDim" Color="#005c4d"/>
-        <SolidColorBrush x:Key="Cyan" Color="#5ec4ff"/>
-        <SolidColorBrush x:Key="Amber" Color="#e5a000"/>
-        <SolidColorBrush x:Key="AmberDim" Color="#1f1800"/>
-        <SolidColorBrush x:Key="Green" Color="#7dff7d"/>
-        <SolidColorBrush x:Key="Red" Color="#ff5c5c"/>
+        <!-- JJK Domain Expansion palette -->
+        <SolidColorBrush x:Key="Bg" Color="#08060F"/>
+        <SolidColorBrush x:Key="BgDark" Color="#04030A"/>
+        <SolidColorBrush x:Key="BgSurface" Color="#13101E"/>
+        <SolidColorBrush x:Key="BgPanel" Color="#0D0A17"/>
+        <SolidColorBrush x:Key="Fg" Color="#B8C2D0"/>
+        <SolidColorBrush x:Key="FgDim" Color="#4A3D65"/>
+        <SolidColorBrush x:Key="FgBright" Color="#E4E8F0"/>
+        <SolidColorBrush x:Key="Teal" Color="#8B5CF6"/>
+        <SolidColorBrush x:Key="TealDim" Color="#2D1B69"/>
+        <SolidColorBrush x:Key="Cyan" Color="#60A5FA"/>
+        <SolidColorBrush x:Key="Amber" Color="#F59E0B"/>
+        <SolidColorBrush x:Key="AmberDim" Color="#2D1F05"/>
+        <SolidColorBrush x:Key="Green" Color="#34D399"/>
+        <SolidColorBrush x:Key="Red" Color="#EF4444"/>
+        <SolidColorBrush x:Key="Lavender" Color="#A78BFA"/>
     </Window.Resources>
 
-    <DockPanel>
-        <!-- ── Header ── -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource BgDark}" Padding="14,10">
-            <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse x:Name="DotIndicator" Width="12" Height="12"
-                             Fill="{StaticResource TealDim}" Margin="0,0,8,0"/>
-                    <StackPanel>
-                        <TextBlock Text="MCP SERVER" FontFamily="{StaticResource FontUi}"
-                                   FontSize="7" Foreground="{StaticResource FgDim}"/>
-                        <TextBlock Text="ShikigamiMCP" FontFamily="{StaticResource FontUi}"
-                                   FontSize="12" FontWeight="Bold" Foreground="{StaticResource Teal}"/>
+    <Grid>
+        <!-- ═══ Layer 0: Domain Seal watermark ═══ -->
+        <Grid IsHitTestVisible="False" Opacity="0.025"
+              HorizontalAlignment="Center" VerticalAlignment="Center"
+              Width="340" Height="340" RenderTransformOrigin="0.5,0.5">
+            <Grid.RenderTransform>
+                <RotateTransform x:Name="SealRotation"/>
+            </Grid.RenderTransform>
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="1.2" StrokeDashArray="4 2"/>
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="0.6" Margin="35"/>
+            <Ellipse Stroke="#8B5CF6" StrokeThickness="0.4" Margin="75"/>
+            <Path Stroke="#8B5CF6" StrokeThickness="0.6" Fill="Transparent"
+                  Data="M 170,44 L 279,231 L 61,231 Z"/>
+            <Path Stroke="#8B5CF6" StrokeThickness="0.6" Fill="Transparent"
+                  Data="M 170,296 L 61,109 L 279,109 Z"/>
+            <Path Stroke="#8B5CF6" StrokeThickness="0.3"
+                  Data="M 170,0 L 170,340 M 0,170 L 340,170 M 50,50 L 290,290 M 290,50 L 50,290"/>
+        </Grid>
+
+        <!-- ═══ Layer 1: Content ═══ -->
+        <DockPanel>
+            <!-- ── Header ── -->
+            <Border DockPanel.Dock="Top" Background="{StaticResource BgDark}" Padding="14,10">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse x:Name="DotIndicator" Width="12" Height="12"
+                                 Fill="{StaticResource TealDim}" Margin="0,0,8,0">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="#8B5CF6" BlurRadius="10" ShadowDepth="0" Opacity="0.4"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <!-- 呪 curse kanji badge -->
+                        <TextBlock Text="呪" FontFamily="{StaticResource FontUi}" FontSize="22" FontWeight="Bold"
+                                   Foreground="{StaticResource Teal}" Margin="0,-4,8,0" VerticalAlignment="Center"
+                                   ToolTip="Curse (呪) — MCP control center"
+                                   ToolTipService.InitialShowDelay="0">
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="#8B5CF6" BlurRadius="16" ShadowDepth="0" Opacity="0.35"/>
+                            </TextBlock.Effect>
+                        </TextBlock>
+                        <StackPanel>
+                            <TextBlock Text="呪術管制" FontFamily="{StaticResource FontUi}"
+                                       FontSize="9" Foreground="{StaticResource FgDim}"
+                                       ToolTip="MCP Server" ToolTipService.InitialShowDelay="0"/>
+                            <TextBlock Text="Shikigami MCP Sorcerer" FontFamily="Bahnschrift"
+                                       FontSize="14" FontWeight="Bold" Foreground="{StaticResource Lavender}"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-                <TextBlock x:Name="PortLabel" Text=":..." FontFamily="{StaticResource FontMono}"
-                           FontSize="14" Foreground="{StaticResource FgDim}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
-            </Grid>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="{StaticResource TealDim}" Height="1"/>
+                    <TextBlock x:Name="PortLabel" Text=":..." FontFamily="{StaticResource FontMono}"
+                               FontSize="16" Foreground="{StaticResource FgDim}"
+                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+            <!-- Cursed energy flow line -->
+            <Border DockPanel.Dock="Top" Height="2">
+                <Border.Effect>
+                    <DropShadowEffect Color="#8B5CF6" BlurRadius="6" ShadowDepth="0" Opacity="0.4"/>
+                </Border.Effect>
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#8B5CF6" Offset="0"/>
+                        <GradientStop Color="#2D1B69" Offset="0.4"/>
+                        <GradientStop Color="#EF4444" Offset="0.7"/>
+                        <GradientStop Color="Transparent" Offset="0.95"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
 
-        <!-- ── Stats Grid (3x2) ── -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource BgPanel}" Padding="14,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="1"/>
-                    <ColumnDefinition Width="20"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="1"/>
-                    <ColumnDefinition Width="20"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="6"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+            <!-- ── Stats Grid (3x2) ── -->
+            <Border DockPanel.Dock="Top" Background="{StaticResource BgPanel}" Padding="14,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="1"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="6"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <!-- Row 0: AGENTS | PROMPTS | MSGS -->
-                <StackPanel Grid.Row="0" Grid.Column="0">
-                    <TextBlock Text="AGENTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatAgents" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Green}"/>
-                </StackPanel>
-                <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Fill="{StaticResource FgDim}" Width="1"/>
-                <StackPanel Grid.Row="0" Grid.Column="3">
-                    <TextBlock Text="PROMPTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatPrompts" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
-                </StackPanel>
-                <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="4" Fill="{StaticResource FgDim}" Width="1"/>
-                <StackPanel Grid.Row="0" Grid.Column="6">
-                    <TextBlock Text="MSGS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatMessages" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
-                </StackPanel>
+                    <!-- Row 0: 式神 | 呪文 | 伝令 -->
+                    <StackPanel Grid.Row="0" Grid.Column="0">
+                        <TextBlock Text="式 神" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Agents" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatAgents" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Green}"/>
+                    </StackPanel>
+                    <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Fill="{StaticResource FgDim}" Width="1" Opacity="0.4"/>
+                    <StackPanel Grid.Row="0" Grid.Column="3">
+                        <TextBlock Text="呪 文" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Prompts" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatPrompts" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                    </StackPanel>
+                    <Rectangle Grid.Row="0" Grid.RowSpan="3" Grid.Column="4" Fill="{StaticResource FgDim}" Width="1" Opacity="0.4"/>
+                    <StackPanel Grid.Row="0" Grid.Column="6">
+                        <TextBlock Text="伝 令" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Messages" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatMessages" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
+                    </StackPanel>
 
-                <!-- Row 2: RESULTS | LOGS | TRASH -->
-                <StackPanel Grid.Row="2" Grid.Column="0">
-                    <TextBlock Text="RESULTS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatResults" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Green}"/>
-                </StackPanel>
-                <StackPanel Grid.Row="2" Grid.Column="3">
-                    <TextBlock Text="LOGS" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatLogs" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
-                </StackPanel>
-                <StackPanel Grid.Row="2" Grid.Column="6">
-                    <TextBlock Text="TRASH" FontFamily="{StaticResource FontUi}" FontSize="7" Foreground="{StaticResource FgDim}"/>
-                    <TextBlock x:Name="StatTrash" Text="0" FontFamily="{StaticResource FontUi}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource FgDim}"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="{StaticResource BgSurface}" Height="1"/>
+                    <!-- Row 2: 結果 | 記録 | 廃棄 -->
+                    <StackPanel Grid.Row="2" Grid.Column="0">
+                        <TextBlock Text="結 果" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Results" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatResults" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Green}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="3">
+                        <TextBlock Text="記 録" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Logs" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatLogs" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Cyan}"/>
+                    </StackPanel>
+                    <StackPanel Grid.Row="2" Grid.Column="6">
+                        <TextBlock Text="廃 棄" FontFamily="{StaticResource FontUi}" FontSize="9" Foreground="{StaticResource FgDim}"
+                                   ToolTip="Trash" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatTrash" Text="0" FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold" Foreground="{StaticResource FgDim}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Border DockPanel.Dock="Top" Height="1" Background="{StaticResource BgSurface}"/>
 
-        <!-- ── Cost Banner ── -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource AmberDim}" Padding="14,8">
-            <Grid>
-                <StackPanel>
-                    <TextBlock Text="&#x25C6; SESSION COST" FontFamily="{StaticResource FontUi}"
-                               FontSize="7" Foreground="{StaticResource Amber}"/>
-                    <TextBlock x:Name="CostLabel" Text="$0.00" FontFamily="{StaticResource FontUi}"
-                               FontSize="18" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
-                </StackPanel>
-                <TextBlock x:Name="CostDetailLabel" Text="" FontFamily="{StaticResource FontUi}"
-                           FontSize="8" Foreground="{StaticResource FgDim}"
-                           HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
-            </Grid>
-        </Border>
-        <Border DockPanel.Dock="Top" Background="{StaticResource Amber}" Height="1"/>
+            <!-- ── Cost Banner (対価) ── -->
+            <Border DockPanel.Dock="Top" Background="{StaticResource AmberDim}" Padding="14,8">
+                <Grid>
+                    <StackPanel>
+                        <TextBlock Text="◆ 対価" FontFamily="{StaticResource FontUi}"
+                                   FontSize="9" Foreground="{StaticResource Amber}"
+                                   ToolTip="Session Cost" ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="CostLabel" Text="$0.00" FontFamily="Bahnschrift"
+                                   FontSize="20" FontWeight="Bold" Foreground="{StaticResource Amber}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="CostDetailLabel" Text="" FontFamily="Bahnschrift"
+                               FontSize="10" Foreground="{StaticResource FgDim}"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+                </Grid>
+            </Border>
+            <!-- Cursed flame line -->
+            <Border DockPanel.Dock="Top" Height="1">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#F59E0B" Offset="0"/>
+                        <GradientStop Color="#2D1F05" Offset="0.5"/>
+                        <GradientStop Color="Transparent" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border>
 
-        <!-- ── Pools section (hidden when empty) ── -->
-        <StackPanel x:Name="PoolsSection" DockPanel.Dock="Top" Visibility="Collapsed">
-            <TextBlock x:Name="PoolsHeader" Text="HORDE POOLS" FontFamily="{StaticResource FontUi}"
-                       FontSize="7" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"/>
-            <ItemsControl x:Name="PoolsList" Margin="8,0"/>
-        </StackPanel>
+            <!-- ── Pools section (軍勢) ── -->
+            <StackPanel x:Name="PoolsSection" DockPanel.Dock="Top" Visibility="Collapsed">
+                <TextBlock x:Name="PoolsHeader" Text="軍 勢" FontFamily="{StaticResource FontUi}"
+                           FontSize="9" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"
+                           ToolTip="Horde Pools" ToolTipService.InitialShowDelay="0"/>
+                <ItemsControl x:Name="PoolsList" Margin="8,0"/>
+            </StackPanel>
 
-        <!-- ── Active Agents ── -->
-        <TextBlock DockPanel.Dock="Top" Text="ACTIVE SHIKIGAMI" FontFamily="{StaticResource FontUi}"
-                   FontSize="7" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"/>
-        <RichTextBox x:Name="AgentList" Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
-                     FontFamily="{StaticResource FontMono}" FontSize="9" IsReadOnly="True"
-                     BorderThickness="0" Padding="14,4" VerticalScrollBarVisibility="Auto">
-            <RichTextBox.Document>
-                <FlowDocument PageWidth="5000"/>
-            </RichTextBox.Document>
-        </RichTextBox>
-    </DockPanel>
+            <!-- ── Active Agents (活動中の式神) ── -->
+            <TextBlock DockPanel.Dock="Top" Text="活動中の式神" FontFamily="{StaticResource FontUi}"
+                       FontSize="9" Foreground="{StaticResource FgDim}" Margin="14,8,14,2"
+                       ToolTip="Active Shikigami" ToolTipService.InitialShowDelay="0"/>
+            <RichTextBox x:Name="AgentList" Background="{StaticResource Bg}" Foreground="{StaticResource Fg}"
+                         FontFamily="{StaticResource FontMono}" FontSize="11" IsReadOnly="True"
+                         BorderThickness="0" Padding="14,4" VerticalScrollBarVisibility="Auto">
+                <RichTextBox.Document>
+                    <FlowDocument PageWidth="5000"/>
+                </RichTextBox.Document>
+            </RichTextBox>
+        </DockPanel>
+
+        <!-- ═══ Layer 2: Domain barrier corner marks ═══ -->
+        <Grid x:Name="CornerMarks" IsHitTestVisible="False">
+            <Path Data="M 0,35 L 0,0 L 35,0" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,5,0,0"/>
+            <Path Data="M 0,20 L 0,0 L 20,0" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Left" VerticalAlignment="Top" Margin="9,9,0,0"/>
+            <Rectangle Width="4" Height="4" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="3,3,0,0"/>
+
+            <Path Data="M 0,0 L 35,0 L 35,35" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,5,5,0"/>
+            <Path Data="M 0,0 L 20,0 L 20,20" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,9,9,0"/>
+            <Rectangle Width="4" Height="4" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,3,3,0"/>
+
+            <Path Data="M 0,0 L 0,35 L 35,35" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="5,0,0,5"/>
+            <Path Data="M 0,0 L 0,20 L 20,20" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="9,0,0,9"/>
+            <Rectangle Width="4" Height="4" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="3,0,0,3"/>
+
+            <Path Data="M 35,0 L 35,35 L 0,35" Stroke="#2D1B69" StrokeThickness="2"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,5,5"/>
+            <Path Data="M 20,0 L 20,20 L 0,20" Stroke="#8B5CF6" StrokeThickness="1" Opacity="0.35"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,9,9"/>
+            <Rectangle Width="4" Height="4" Fill="#8B5CF6" Opacity="0.6"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,3,3"/>
+        </Grid>
+    </Grid>
 </Window>

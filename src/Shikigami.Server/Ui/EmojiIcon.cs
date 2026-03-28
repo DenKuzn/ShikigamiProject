@@ -7,11 +7,12 @@ using System.Windows.Media.Imaging;
 namespace Shikigami.Server.Ui;
 
 /// <summary>
-/// Renders an emoji string into a System.Drawing.Icon and a WPF ImageSource.
+/// Renders the 呪 (curse) kanji into icons for window title bar and system tray.
+/// Jujutsu Kaisen themed — purple cursed energy.
 /// </summary>
 public static class EmojiIcon
 {
-    private const string Emoji = "\U0001F407"; // 🐇
+    private const string CurseKanji = "\u546A"; // 呪
 
     public static Icon CreateDrawingIcon(int size = 32)
     {
@@ -20,9 +21,10 @@ public static class EmojiIcon
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         g.Clear(Color.Transparent);
 
-        using var font = new Font("Segoe UI Emoji", size * 0.7f, GraphicsUnit.Pixel);
+        using var font = new Font("Yu Gothic UI", size * 0.65f, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
+        using var brush = new SolidBrush(Color.FromArgb(167, 139, 250)); // #A78BFA lavender
         var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString(Emoji, font, Brushes.White, new RectangleF(0, 0, size, size), sf);
+        g.DrawString(CurseKanji, font, brush, new RectangleF(0, 0, size, size), sf);
 
         var hIcon = bmp.GetHicon();
         return Icon.FromHandle(hIcon);
