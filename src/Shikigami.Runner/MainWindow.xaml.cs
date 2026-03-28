@@ -12,6 +12,24 @@ namespace Shikigami.Runner;
 
 public partial class MainWindow : Window
 {
+    /// <summary>
+    /// Explicit state machine replacing 7 implicit booleans
+    /// (_running, _waitingInput, _inputIsStop, _idle, _hordeWaiting, + _closeTimer-as-state).
+    /// Every state is mutually exclusive — no invalid combinations possible.
+    /// </summary>
+    private enum RunnerState
+    {
+        Starting,
+        Working,
+        WaitingInputQuestion,   // USER_INPUT_REQUIRED detected
+        WaitingInputStop,       // user pressed Stop, awaiting correction
+        Idle,                   // AGENT_IDLE received
+        HordeWaiting,           // blocked tasks, polling for availability
+        Completing,             // countdown to auto-close
+        Completed,
+        Aborted,
+    }
+
     private readonly AppArgs _args;
     private readonly McpHttpClient _mcp;
     private readonly CliRunner _cli;
@@ -25,12 +43,9 @@ public partial class MainWindow : Window
     private int _toolCount;
     private double _totalCost;
     private int _tasksCompleted;
-    private bool _running;
-    private bool _waitingInput;
-    private bool _userStopped;
-    private bool _inputIsStop;
-    private bool _idle;
-    private bool _keepActive;
+    private RunnerState _state = RunnerState.Starting;
+    private bool _userStopped;      // transient signal: Stop pressed during Working
+    private bool _keepActive;       // orthogonal toggle: prevent auto-close on complete
     private DispatcherTimer? _closeTimer;
     private int _closeCountdown;
     private string? _originalPrompt;
@@ -40,7 +55,6 @@ public partial class MainWindow : Window
     // Horde mode
     private readonly bool _taskMode;
     private string? _currentTaskId;
-    private bool _hordeWaiting;
     private DispatcherTimer? _hordePollTimer;
     private int _markerRetries;
     private string? _currentTaskPrompt;
@@ -71,9 +85,9 @@ public partial class MainWindow : Window
         _dotTimer.Tick += (_, _) =>
         {
             _dotOn = !_dotOn;
-            if (_waitingInput)
+            if (_state is RunnerState.WaitingInputQuestion or RunnerState.WaitingInputStop)
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.AmberBrush : DeepSpaceTheme.AmberDimBrush;
-            else if (_idle || _hordeWaiting)
+            else if (_state is RunnerState.Idle or RunnerState.HordeWaiting)
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.GreenBrush : DeepSpaceTheme.GreenDimBrush;
             else
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.TealBrush : DeepSpaceTheme.TealDimBrush;
@@ -135,7 +149,7 @@ public partial class MainWindow : Window
 
     private void BeginCliPass()
     {
-        _running = true;
+        _state = RunnerState.Working;
         _userStopped = false;
         HeaderStatus.Text = "working";
         HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
@@ -154,7 +168,7 @@ public partial class MainWindow : Window
             _ = _mcp.SubmitCostAsync(_totalCost);
         }
 
-        _running = false;
+        // State remains Working — caller sets the next state after evaluating the result
         StopButton.IsEnabled = false;
         StopButton.Opacity = 0.25;
     }
@@ -247,7 +261,7 @@ public partial class MainWindow : Window
     private async Task LaunchPassAsync()
     {
         if (_promptBuilder == null) return;
-        if (_idle) ExitIdle();
+        if (_state == RunnerState.Idle) ExitIdle();
 
         _iteration++;
         StatIteration.Text = _iteration.ToString();
@@ -303,7 +317,6 @@ public partial class MainWindow : Window
     {
         var agentId = _args.AgentId ?? _args.PromptId!;
         StopHordePoll();
-        _hordeWaiting = false;
 
         var resp = await _mcp.RequestTaskAsync(_args.PoolId!, _args.AgentType!, agentId);
 
@@ -313,6 +326,7 @@ public partial class MainWindow : Window
         {
             AppendLog($"[horde] Pool aborted ({_tasksCompleted} done).", "error");
             await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
+            _state = RunnerState.Aborted;
             HeaderStatus.Text = "aborted";
             HeaderStatus.Foreground = DeepSpaceTheme.RedBrush;
             return;
@@ -392,7 +406,7 @@ public partial class MainWindow : Window
         {
             var blockedCount = resp?.TryGetProperty("blocked_count", out var bc) == true ? bc.GetInt32() : 0;
             AppendLog($"[horde] Waiting ({blockedCount} blocked)...", "sys");
-            _hordeWaiting = true;
+            _state = RunnerState.HordeWaiting;
             HeaderStatus.Text = $"waiting ({blockedCount} blocked)";
             HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
             await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "idle", "Waiting for tasks");
@@ -508,7 +522,7 @@ public partial class MainWindow : Window
 
     private async Task PollMessagesAsync()
     {
-        if (!_mcp.Active || _closeTimer != null) return;
+        if (!_mcp.Active || _state == RunnerState.Completing) return;
         try
         {
             var messages = _taskMode
@@ -534,20 +548,19 @@ public partial class MainWindow : Window
             AppendLog(sep, "sys");
 
             // If not running CLI → inject message and re-launch
-            if (!_running)
+            if (_state != RunnerState.Working)
             {
                 _memory.AddMessage(combined);
 
                 // Cancel input/idle wait if active
-                if (_waitingInput)
+                if (_state is RunnerState.WaitingInputQuestion or RunnerState.WaitingInputStop)
                 {
-                    _waitingInput = false;
                     DisableInput();
                     InputBox.Clear();
                 }
-                if (_idle) ExitIdle();
+                if (_state == RunnerState.Idle) ExitIdle();
 
-                if (_taskMode && _hordeWaiting)
+                if (_taskMode && _state == RunnerState.HordeWaiting)
                 {
                     // In horde waiting state, message doesn't re-launch — just display
                 }
@@ -568,7 +581,7 @@ public partial class MainWindow : Window
 
     private void EnterIdle()
     {
-        _idle = true;
+        _state = RunnerState.Idle;
 
         var sep = new string('\u2500', 54);
         AppendLog(sep, "sys");
@@ -586,7 +599,7 @@ public partial class MainWindow : Window
 
     private void ExitIdle()
     {
-        _idle = false;
+        // State will transition to Working when BeginCliPass is called by the subsequent launch
         DisableInput();
         InputBox.Clear();
     }
@@ -615,6 +628,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        _state = RunnerState.Completing;
         _ = _mcp.UpdateStateAsync("completed");
         _closeCountdown = 10;
         HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
@@ -669,7 +683,7 @@ public partial class MainWindow : Window
 
     private void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_running) return;
+        if (_state != RunnerState.Working) return;
         _userStopped = true;
         StopButton.IsEnabled = false;
         StopButton.Opacity = 0.5;
@@ -679,8 +693,7 @@ public partial class MainWindow : Window
 
     private void AskUserAfterStop()
     {
-        _waitingInput = true;
-        _inputIsStop = true;
+        _state = RunnerState.WaitingInputStop;
         StopButton.IsEnabled = false;
         StopButton.Opacity = 0.25;
         StopButton.Content = "\u25a0 \u505c\u6b62";
@@ -701,7 +714,7 @@ public partial class MainWindow : Window
 
     private void AskUser(string question)
     {
-        _waitingInput = true;
+        _state = RunnerState.WaitingInputQuestion;
         var sep = new string('\u2500', 54);
         AppendLog(sep, "sys");
         AppendLog("  AGENT ASKS:", "task");
@@ -747,8 +760,7 @@ public partial class MainWindow : Window
         InputBox.Clear();
         DisableInput();
 
-        var isStop = _inputIsStop;
-        _inputIsStop = false;
+        var isStop = _state == RunnerState.WaitingInputStop;
 
         var sep = new string('\u2500', 54);
         AppendLog(sep, "sys");
@@ -760,8 +772,6 @@ public partial class MainWindow : Window
             _memory.AddUserStop(text);
         else
             _memory.AddUserInput(text);
-
-        _waitingInput = false;
 
         if (_taskMode)
             await RelaunchHordeTaskAsync(isStop
