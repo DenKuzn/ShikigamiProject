@@ -61,7 +61,7 @@ ShikigamiProject.sln
 │       ├── ViewModels/              — MVVM view models
 │       ├── Services/                — CLI runner, MCP HTTP client, prompt builder
 │       ├── Theme/                   — Deep Space color palette, styles
-│       ├── prompt_*.txt             — Editable prompt templates (copied to output)
+│       ├── Prompts/                 — Editable prompt templates (copied to output as Prompts/)
 │       └── Shikigami.Runner.csproj
 │
 └── tests/
@@ -203,7 +203,8 @@ Fonts: `Bahnschrift` (UI), `Consolas` (monospace).
 ├── Server/
 │   └── Shikigami.Server.exe    ← MCP server (registered in Claude CLI)
 └── Runner/
-    └── Shikigami.Runner.exe    ← WPF GUI (launched by Server per shikigami)
+    ├── Shikigami.Runner.exe    ← WPF GUI (launched by Server per shikigami)
+    └── Prompts/                ← Editable prompt templates
 ```
 
 Server finds Runner via relative path: `../Runner/Shikigami.Runner.exe` from its own directory.
@@ -263,7 +264,7 @@ Runner loads prompt templates from `.txt` files next to its executable. If a fil
 | `prompt_mcp_header.txt` | MCP connection header (prompt mode) | `{port}`, `{agent_id}`, `{lead_id}` |
 | `prompt_pool_mcp_header.txt` | MCP connection header (horde mode) | `{port}`, `{agent_id}`, `{lead_id}`, `{pool_id}` |
 
-Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/` to customize prompts without recompilation.
+Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize prompts without recompilation.
 
 ---
 
@@ -299,12 +300,13 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/` to customize prompts w
 | Idle mode | AGENT_IDLE marker: Runner stays alive with green dot pulse, input panel open, accepts messages or user input |
 | Keep Active button | Header toggle: prevents auto-close on COMPLETED, transitions to idle instead; cancels close timer if already counting |
 | Auto-close on complete | AGENT_COMPLETED triggers 10s countdown in header (`closing in 10s...9s...`), then window closes |
+| Prompts folder | Prompt templates moved to `Prompts/` subdirectory next to exe |
 
 ### TODO
 | Feature | Details |
 |---|---|
 | CleanContext | Format and clean event log before submitting to server (Python context.py) |
-| Horde idle/backoff | Proper polling with backoff when tasks are blocked, idle state |
+| Horde idle/backoff | DispatcherTimer poll (5s) done, blocked/done/aborted distinction done — needs further testing and fixes |
 | Prompt editor button | UI button to open prompt template files in external editor |
 
 ---

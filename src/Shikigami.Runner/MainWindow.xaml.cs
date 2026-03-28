@@ -40,6 +40,8 @@ public partial class MainWindow : Window
     // Horde mode
     private readonly bool _taskMode;
     private string? _currentTaskId;
+    private bool _hordeWaiting;
+    private DispatcherTimer? _hordePollTimer;
 
     public MainWindow(AppArgs args)
     {
@@ -69,7 +71,7 @@ public partial class MainWindow : Window
             _dotOn = !_dotOn;
             if (_waitingInput)
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.AmberBrush : DeepSpaceTheme.AmberDimBrush;
-            else if (_idle)
+            else if (_idle || _hordeWaiting)
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.GreenBrush : DeepSpaceTheme.GreenDimBrush;
             else
                 DotIndicator.Fill = _dotOn ? DeepSpaceTheme.TealBrush : DeepSpaceTheme.TealDimBrush;
@@ -233,89 +235,146 @@ public partial class MainWindow : Window
     private async Task DispatchNextTaskAsync()
     {
         var agentId = _args.AgentId ?? _args.PromptId!;
+        StopHordePoll();
+        _hordeWaiting = false;
+
         var resp = await _mcp.RequestTaskAsync(_args.PoolId!, _args.AgentType!, agentId);
 
-        if (resp == null || (resp.Value.TryGetProperty("task", out var taskProp) && taskProp.ValueKind == System.Text.Json.JsonValueKind.Null))
+        // Pool aborted
+        if (resp?.TryGetProperty("error", out var errProp) == true
+            && errProp.GetString() == "Pool aborted")
         {
-            if (resp?.TryGetProperty("all_done", out var ad) == true && ad.GetBoolean())
-            {
-                AppendLog("[horde] All tasks done. Exiting.", "sys");
-                await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
-                HeaderStatus.Text = "completed";
-                HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
-                return;
-            }
-            // Blocked — wait and retry
-            AppendLog("[horde] No available tasks, waiting...", "sys");
-            await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "idle", "Waiting for tasks");
-            await Task.Delay(5000);
-            await DispatchNextTaskAsync();
+            AppendLog($"[horde] Pool aborted ({_tasksCompleted} done).", "error");
+            await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
+            HeaderStatus.Text = "aborted";
+            HeaderStatus.Foreground = DeepSpaceTheme.RedBrush;
             return;
         }
 
-        var task = resp.Value.GetProperty("task");
-        _currentTaskId = task.GetProperty("id").GetString();
-        var title = task.GetProperty("title").GetString();
-        var description = task.GetProperty("description").GetString();
-
-        AppendLog($"[horde] Task: {title}", "task");
-        await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "working", $"Task: {title}");
-
-        var taskPrompt = PromptBuilder.BuildTaskPrompt(
-            title!, description!, _mcp.Port!.Value, agentId, _args.PoolId!, _args.LeadId);
-        _running = true;
-        _userStopped = false;
-        _iteration++;
-        StatIteration.Text = _iteration.ToString();
-        HeaderStatus.Text = "working";
-        HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
-        StopButton.IsEnabled = true;
-        StopButton.Opacity = 1.0;
-
-        await Task.Run(() =>
+        // Got a task
+        if (resp?.TryGetProperty("task", out var taskProp) == true
+            && taskProp.ValueKind != System.Text.Json.JsonValueKind.Null)
         {
-            var result = _cli.Run(taskPrompt, (type, data) =>
+            var task = taskProp;
+            _currentTaskId = task.GetProperty("id").GetString();
+            var title = task.GetProperty("title").GetString();
+            var description = task.GetProperty("description").GetString();
+
+            AppendLog($"[horde] Task: {title}", "task");
+            await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "working", $"Task: {title}");
+
+            var taskPrompt = PromptBuilder.BuildTaskPrompt(
+                title!, description!, _mcp.Port!.Value, agentId, _args.PoolId!, _args.LeadId);
+            _running = true;
+            _userStopped = false;
+            _iteration++;
+            StatIteration.Text = _iteration.ToString();
+            HeaderStatus.Text = "working";
+            HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
+            StopButton.IsEnabled = true;
+            StopButton.Opacity = 1.0;
+
+            await Task.Run(() =>
             {
-                Dispatcher.Invoke(() => HandleEvent(type, data));
+                var result = _cli.Run(taskPrompt, (type, data) =>
+                {
+                    Dispatcher.Invoke(() => HandleEvent(type, data));
+                });
+
+                Dispatcher.Invoke(async () =>
+                {
+                    if (result.Cost.HasValue)
+                    {
+                        _totalCost += result.Cost.Value;
+                        StatCost.Text = $"${_totalCost:F4}";
+                        _ = _mcp.SubmitCostAsync(_totalCost);
+                    }
+
+                    _tasksCompleted++;
+                    StatTasks.Text = _tasksCompleted.ToString();
+                    _running = false;
+                    StopButton.IsEnabled = false;
+                    StopButton.Opacity = 0.25;
+
+                    if (_userStopped)
+                    {
+                        _userStopped = false;
+                        AskUserAfterStop();
+                        return;
+                    }
+
+                    if (result.Error != null)
+                    {
+                        AppendLog($"[horde] Task failed: {result.Error}", "error");
+                        await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.Error);
+                    }
+                    else
+                    {
+                        AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
+                        await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
+                    }
+
+                    await DispatchNextTaskAsync();
+                });
             });
+            return;
+        }
 
-            Dispatcher.Invoke(async () =>
-            {
-                if (result.Cost.HasValue)
-                {
-                    _totalCost += result.Cost.Value;
-                    StatCost.Text = $"${_totalCost:F4}";
-                    _ = _mcp.SubmitCostAsync(_totalCost);
-                }
+        // All done
+        if (resp?.TryGetProperty("all_done", out var ad) == true && ad.GetBoolean())
+        {
+            AppendLog($"[horde] All tasks done ({_tasksCompleted} completed). Exiting.", "sys");
+            await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
+            HeaderStatus.Text = "completed";
+            HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+            return;
+        }
 
-                _tasksCompleted++;
-                StatTasks.Text = _tasksCompleted.ToString();
-                _running = false;
-                StopButton.IsEnabled = false;
-                StopButton.Opacity = 0.25;
+        // Blocked — check if our agent_type has pending tasks
+        var blockedTypes = new List<string>();
+        if (resp?.TryGetProperty("blocked_agent_types", out var btProp) == true
+            && btProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var bt in btProp.EnumerateArray())
+                blockedTypes.Add(bt.GetString() ?? "");
+        }
 
-                if (_userStopped)
-                {
-                    _userStopped = false;
-                    AskUserAfterStop();
-                    return;
-                }
+        if (blockedTypes.Contains(_args.AgentType!))
+        {
+            var blockedCount = resp?.TryGetProperty("blocked_count", out var bc) == true ? bc.GetInt32() : 0;
+            AppendLog($"[horde] Waiting ({blockedCount} blocked)...", "sys");
+            _hordeWaiting = true;
+            HeaderStatus.Text = $"waiting ({blockedCount} blocked)";
+            HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
+            await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "idle", "Waiting for tasks");
+            ScheduleHordePoll();
+        }
+        else
+        {
+            // No pending tasks for our type — we're done
+            AppendLog($"[horde] No more tasks for {_args.AgentType} ({_tasksCompleted} done).", "sys");
+            await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
+            HeaderStatus.Text = "completed";
+            HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+        }
+    }
 
-                if (result.Error != null)
-                {
-                    AppendLog($"[horde] Task failed: {result.Error}", "error");
-                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.Error);
-                }
-                else
-                {
-                    AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
-                    await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
-                }
+    private void ScheduleHordePoll()
+    {
+        StopHordePoll();
+        _hordePollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        _hordePollTimer.Tick += async (_, _) =>
+        {
+            StopHordePoll();
+            await DispatchNextTaskAsync();
+        };
+        _hordePollTimer.Start();
+    }
 
-                // Request next task
-                await DispatchNextTaskAsync();
-            });
-        });
+    private void StopHordePoll()
+    {
+        _hordePollTimer?.Stop();
+        _hordePollTimer = null;
     }
 
     private void HandleEvent(string type, Dictionary<string, object> data)
@@ -597,6 +656,7 @@ public partial class MainWindow : Window
     {
         _dotTimer.Stop();
         _mcpPollTimer.Stop();
+        StopHordePoll();
         _cli.Kill();
         if (_taskMode)
             _ = _mcp.PoolUnregisterAsync(_args.PoolId!, _args.AgentId ?? _args.PromptId!);

@@ -33,7 +33,7 @@ public sealed class PromptBuilder
         _skipCommDirective = skipCommDirective;
         _leadId = leadId;
 
-        var baseDir = AppContext.BaseDirectory;
+        var baseDir = Path.Combine(AppContext.BaseDirectory, "Prompts");
         _commDirective = LoadTemplate(baseDir, "prompt_comm.txt", DefaultCommDirective);
         _hordeCommDirectiveTemplate = LoadTemplate(baseDir, "prompt_horde_comm.txt", DefaultHordeCommDirective);
         _mcpHeaderTemplate = LoadTemplate(baseDir, "prompt_mcp_header.txt", DefaultMcpHeader);
@@ -119,7 +119,7 @@ public sealed class PromptBuilder
         string title, string description,
         int mcpPort, string agentId, string poolId, string leadId = "lead")
     {
-        var baseDir = AppContext.BaseDirectory;
+        var baseDir = Path.Combine(AppContext.BaseDirectory, "Prompts");
         var hordeTemplate = LoadTemplate(baseDir, "prompt_horde_comm.txt", DefaultHordeCommDirective);
         var poolTemplate = LoadTemplate(baseDir, "prompt_pool_mcp_header.txt", DefaultPoolMcpHeader);
 
