@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool _idle;
     private bool _keepActive;
     private DispatcherTimer? _closeTimer;
+    private int _closeCountdown;
     private string? _originalPrompt;
     private PromptBuilder? _promptBuilder;
     private List<Dictionary<string, object>> _allEvents = new();
@@ -197,13 +198,26 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    HeaderStatus.Text = "completed";
-                    HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
                     _ = _mcp.UpdateStateAsync("completed");
-                    AppendLog("[shikigami] Closing in 10 seconds...", "sys");
+                    _closeCountdown = 10;
+                    HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
+                    HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
 
-                    _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
-                    _closeTimer.Tick += (_, _) => { _closeTimer.Stop(); _closeTimer = null; Close(); };
+                    _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    _closeTimer.Tick += (_, _) =>
+                    {
+                        _closeCountdown--;
+                        if (_closeCountdown <= 0)
+                        {
+                            _closeTimer.Stop();
+                            _closeTimer = null;
+                            Close();
+                        }
+                        else
+                        {
+                            HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
+                        }
+                    };
                     _closeTimer.Start();
                 }
             });
