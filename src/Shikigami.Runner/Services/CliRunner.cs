@@ -205,6 +205,23 @@ public sealed class CliRunner
                     }
                     break;
 
+                case "user":
+                    if (evt.TryGetProperty("message", out var userMsg)
+                        && userMsg.TryGetProperty("content", out var userContent))
+                    {
+                        foreach (var blk in userContent.EnumerateArray())
+                        {
+                            var blkType = blk.TryGetProperty("type", out var ubt) ? ubt.GetString() : null;
+                            if (blkType == "tool_result")
+                            {
+                                var trContent = blk.TryGetProperty("content", out var trc) ? trc.ToString() : "";
+                                var trToolId = blk.TryGetProperty("tool_use_id", out var tid) ? tid.GetString() ?? "" : "";
+                                result.Events.Add(new() { ["type"] = "tool_result", ["content"] = trContent, ["tool_use_id"] = trToolId, ["time"] = ts });
+                            }
+                        }
+                    }
+                    break;
+
                 case "result":
                     result.ResultText = evt.TryGetProperty("result", out var rp) ? rp.GetString() ?? "" : "";
                     result.Cost = evt.TryGetProperty("total_cost_usd", out var cp) ? cp.GetDouble() : null;
