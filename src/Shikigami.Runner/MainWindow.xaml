@@ -4,8 +4,7 @@
         Title="Shikigami" Height="680" Width="960"
         MinHeight="440" MinWidth="640"
         Background="#08060F"
-        WindowStartupLocation="CenterScreen"
->
+        WindowStartupLocation="CenterScreen">
 
     <!-- ═══ Domain Expansion animations ═══ -->
     <Window.Triggers>
@@ -101,7 +100,8 @@
                         <!-- 呪 curse kanji badge -->
                         <TextBlock Text="呪" FontFamily="Yu Gothic UI" FontSize="28" FontWeight="Bold"
                                    Foreground="#8B5CF6" Margin="0,-6,10,0" VerticalAlignment="Center"
-                                   ToolTip="Curse (呪) — cursed energy indicator">
+                                   ToolTip="Curse (呪) — cursed energy indicator"
+                                   ToolTipService.InitialShowDelay="0">
                             <TextBlock.Effect>
                                 <DropShadowEffect Color="#8B5CF6" BlurRadius="22" ShadowDepth="0" Opacity="0.4"/>
                             </TextBlock.Effect>
@@ -110,7 +110,8 @@
                         <StackPanel>
                             <TextBlock Text="式神" FontFamily="Yu Gothic UI" FontSize="10"
                                        Foreground="#4A3D65" FontWeight="Bold" Margin="0,0,0,-2"
-                                       ToolTip="Shikigami — summoned spirit agent"/>
+                                       ToolTip="Shikigami — summoned spirit agent"
+                                       ToolTipService.InitialShowDelay="0"/>
                             <TextBlock x:Name="HeaderName" Text="Shikigami"
                                        FontFamily="Bahnschrift" FontSize="17" FontWeight="Bold"
                                        Foreground="#A78BFA"/>
@@ -122,6 +123,7 @@
                             <!-- Emergency stop (always visible, disabled when idle) -->
                             <Button x:Name="StopButton" Content="■ 停止" IsEnabled="False" Opacity="0.25"
                                     ToolTip="Stop — kill the running CLI process"
+                                    ToolTipService.InitialShowDelay="0"
                                     Background="#1A0505" Foreground="#EF4444"
                                     FontFamily="Yu Gothic UI" FontSize="12" FontWeight="Bold"
                                     Padding="10,4" Margin="0,0,8,0"
@@ -130,6 +132,7 @@
                             <!-- Domain barrier maintenance toggle -->
                             <Button x:Name="KeepActiveButton" Content="◎ 結界維持"
                                     ToolTip="Keep Active — prevents auto-close after completion"
+                                    ToolTipService.InitialShowDelay="0"
                                     Background="#0D0A17" Foreground="#4A3D65"
                                     FontFamily="Yu Gothic UI" FontSize="12" FontWeight="Bold"
                                     Padding="10,4" Margin="0,0,0,0"
@@ -165,7 +168,8 @@
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="反 復" FontFamily="Yu Gothic UI" FontSize="9"
                                    Foreground="#4A3D65" FontWeight="Bold"
-                                   ToolTip="Iteration"/>
+                                   ToolTip="Iteration"
+                                   ToolTipService.InitialShowDelay="0"/>
                         <TextBlock x:Name="StatIteration" Text="0"
                                    FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
                                    Foreground="#8B5CF6"/>
@@ -173,7 +177,8 @@
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="術 式" FontFamily="Yu Gothic UI" FontSize="9"
                                    Foreground="#4A3D65" FontWeight="Bold"
-                                   ToolTip="Techniques (tools used)"/>
+                                   ToolTip="Techniques (tools used)"
+                                   ToolTipService.InitialShowDelay="0"/>
                         <TextBlock x:Name="StatTools" Text="0"
                                    FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
                                    Foreground="#60A5FA"/>
@@ -181,7 +186,8 @@
                     <StackPanel Margin="0,0,28,0">
                         <TextBlock Text="対 価" FontFamily="Yu Gothic UI" FontSize="9"
                                    Foreground="#4A3D65" FontWeight="Bold"
-                                   ToolTip="Cost"/>
+                                   ToolTip="Cost"
+                                   ToolTipService.InitialShowDelay="0"/>
                         <TextBlock x:Name="StatCost" Text="$0.00"
                                    FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
                                    Foreground="#F59E0B"/>
@@ -189,7 +195,8 @@
                     <StackPanel x:Name="TasksPanel" Margin="0,0,28,0" Visibility="Collapsed">
                         <TextBlock Text="任 務" FontFamily="Yu Gothic UI" FontSize="9"
                                    Foreground="#4A3D65" FontWeight="Bold"
-                                   ToolTip="Tasks"/>
+                                   ToolTip="Tasks"
+                                   ToolTipService.InitialShowDelay="0"/>
                         <TextBlock x:Name="StatTasks" Text="0"
                                    FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
                                    Foreground="#34D399"/>
