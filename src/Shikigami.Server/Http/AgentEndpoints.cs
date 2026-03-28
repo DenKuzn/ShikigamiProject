@@ -121,6 +121,15 @@ public static class AgentEndpoints
             return Results.Json(new { id = a.Id, name = a.Name, active = a.Active, status = a.Status, current_step = a.CurrentStep });
         });
 
+        app.MapGet("/agents/{id}/result", (string id) =>
+        {
+            if (!state.Agents.TryGetValue(id, out var a))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+            if (a.Result == null)
+                return Results.Json(new { error = "No result yet", status = a.Status }, statusCode: 404);
+            return Results.Json(new { id = a.Id, name = a.Name, status = a.Status, result = a.Result });
+        });
+
         app.MapPut("/agents/{id}/result", async (string id, HttpContext ctx) =>
         {
             if (!state.Agents.TryGetValue(id, out var agent))

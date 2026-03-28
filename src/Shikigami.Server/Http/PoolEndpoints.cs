@@ -32,6 +32,24 @@ public static class PoolEndpoints
             return Results.Json(result, statusCode: status);
         });
 
+        app.MapGet("/pools/{poolId}/tasks", (string poolId) =>
+        {
+            if (!state.Pools.TryGetValue(poolId, out var pool))
+                return Results.Json(new { error = "Pool not found" }, statusCode: 404);
+
+            var tasks = pool.TaskOrder.Select(tid =>
+            {
+                var t = pool.Tasks[tid];
+                return new
+                {
+                    id = t.Id, title = t.Title, agent_type = t.AgentType,
+                    status = t.Status, depends_on = t.DependsOn,
+                    assigned_to = t.AssignedTo, result = t.Result,
+                };
+            }).ToList();
+            return Results.Json(new { pool_id = poolId, status = pool.Status, tasks });
+        });
+
         app.MapGet("/pools/{poolId}/tasks/request", (string poolId, HttpContext ctx) =>
         {
             if (!state.Pools.TryGetValue(poolId, out var pool))

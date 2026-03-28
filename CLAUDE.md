@@ -124,6 +124,7 @@ Preserved from the Python original. Must remain compatible:
 | POST | `/messages/send` | Send message |
 | GET | `/messages/{agent_id}` | Poll inbox (consumes) |
 | GET | `/agents/{id}/state` | Get shikigami state |
+| GET | `/agents/{id}/result` | Get completed shikigami result |
 | PUT | `/agents/{id}/result` | Submit result + event log |
 | PUT | `/agents/{id}/cost` | Submit cost |
 | GET | `/prompts/{prompt_id}` | Fetch stored prompt |
@@ -134,6 +135,7 @@ Preserved from the Python original. Must remain compatible:
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/pools/create` | Create pool + launch agents |
+| GET | `/pools/{pool_id}/tasks` | List all tasks with statuses |
 | GET | `/pools/{pool_id}/tasks/request` | Request next task |
 | PUT | `/pools/{pool_id}/tasks/{task_id}/complete` | Complete task |
 | PUT | `/pools/{pool_id}/tasks/{task_id}/fail` | Fail task |

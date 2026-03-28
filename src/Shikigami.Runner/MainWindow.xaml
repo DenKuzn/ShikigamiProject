@@ -230,7 +230,7 @@
 
             <!-- ── Input panel (Curse invocation) ── -->
             <Border x:Name="InputPanel" Grid.Row="5" Background="#13101E"
-                    Padding="16,10" Visibility="Collapsed">
+                    Padding="18,18" Margin="0,2,0,0">
                 <Border.BorderBrush>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                         <GradientStop Color="#8B5CF6" Offset="0"/>
@@ -253,12 +253,14 @@
                              AcceptsReturn="False" TextWrapping="Wrap"
                              MinHeight="28" MaxHeight="120"
                              VerticalScrollBarVisibility="Auto"
+                             IsEnabled="False" Opacity="0.35"
                              PreviewKeyDown="InputBox_PreviewKeyDown"/>
                     <Button x:Name="SendButton" Grid.Column="1" Content="発動"
                             Margin="8,0,0,0"
                             Background="#2D1B69" Foreground="#8B5CF6"
                             FontFamily="Yu Gothic UI" FontWeight="Bold"
                             Padding="16,6" BorderThickness="0" FontSize="14"
+                            IsEnabled="False" Opacity="0.35"
                             Click="SendButton_Click">
                         <Button.Effect>
                             <DropShadowEffect Color="#8B5CF6" BlurRadius="10" ShadowDepth="0" Opacity="0.25"/>

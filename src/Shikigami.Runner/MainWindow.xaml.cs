@@ -542,7 +542,7 @@ public partial class MainWindow : Window
                 if (_waitingInput)
                 {
                     _waitingInput = false;
-                    InputPanel.Visibility = Visibility.Collapsed;
+                    DisableInput();
                     InputBox.Clear();
                 }
                 if (_idle) ExitIdle();
@@ -580,15 +580,31 @@ public partial class MainWindow : Window
         HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
         _ = _mcp.UpdateStateAsync("idle", "Waiting for messages");
 
-        InputPanel.Visibility = Visibility.Visible;
+        EnableInput();
         InputBox.Focus();
     }
 
     private void ExitIdle()
     {
         _idle = false;
-        InputPanel.Visibility = Visibility.Collapsed;
+        DisableInput();
         InputBox.Clear();
+    }
+
+    private void EnableInput()
+    {
+        InputBox.IsEnabled = true;
+        InputBox.Opacity = 1.0;
+        SendButton.IsEnabled = true;
+        SendButton.Opacity = 1.0;
+    }
+
+    private void DisableInput()
+    {
+        InputBox.IsEnabled = false;
+        InputBox.Opacity = 0.35;
+        SendButton.IsEnabled = false;
+        SendButton.Opacity = 0.35;
     }
 
     private void CompleteWithCountdown()
@@ -679,7 +695,7 @@ public partial class MainWindow : Window
         HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
         _ = _mcp.UpdateStateAsync("waiting", "Stopped by user, awaiting correction");
 
-        InputPanel.Visibility = Visibility.Visible;
+        EnableInput();
         InputBox.Focus();
     }
 
@@ -697,7 +713,7 @@ public partial class MainWindow : Window
         HeaderStatus.Foreground = DeepSpaceTheme.AmberBrush;
         _ = _mcp.UpdateStateAsync("waiting", $"USER_INPUT_REQUIRED: {Truncate(question, 100)}");
 
-        InputPanel.Visibility = Visibility.Visible;
+        EnableInput();
         InputBox.Focus();
     }
 
@@ -729,7 +745,7 @@ public partial class MainWindow : Window
         var text = InputBox.Text.Trim();
         if (string.IsNullOrEmpty(text)) return;
         InputBox.Clear();
-        InputPanel.Visibility = Visibility.Collapsed;
+        DisableInput();
 
         var isStop = _inputIsStop;
         _inputIsStop = false;
