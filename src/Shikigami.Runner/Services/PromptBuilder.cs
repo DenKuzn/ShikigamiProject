@@ -66,46 +66,21 @@ public sealed class PromptBuilder
     /// <summary>
     /// Build the prompt for a given pass iteration (prompt mode).
     /// </summary>
-    public string Build(int iteration, List<Dictionary<string, object>>? allEvents = null)
+    public string Build(int iteration, string? cleanContextJson = null)
     {
         var mcp = McpHeader();
         var suffix = _skipCommDirective ? "" : _commDirective;
 
-        if (iteration == 1 || allEvents == null || allEvents.Count == 0)
+        if (iteration == 1 || string.IsNullOrEmpty(cleanContextJson))
             return mcp + $"## Your task:\n{_originalPrompt}" + suffix;
-
-        // Extract user inputs and messages — present them prominently
-        var interactions = new List<string>();
-        foreach (var evt in allEvents)
-        {
-            var type = evt.TryGetValue("type", out var t) ? t.ToString() : null;
-            var text = evt.TryGetValue("text", out var tx) ? tx.ToString() : null;
-            if (string.IsNullOrEmpty(text)) continue;
-            if (type == "user_input")
-                interactions.Add($"- User answered: {text}");
-            else if (type == "user_stop")
-                interactions.Add($"- **User stopped the agent and instructed:** {text}");
-            else if (type == "mcp_message")
-                interactions.Add($"- {text}");
-        }
 
         var parts = new List<string>
         {
             mcp + $"## Your task:\n{_originalPrompt}",
+            $"## Full History (all previous passes)\n```json\n{cleanContextJson}\n```",
+            "Continue from where you left off. " +
+            "Do NOT re-ask answered questions or re-read files you already have in history.",
         };
-
-        if (interactions.Count > 0)
-        {
-            parts.Add("## New Information (IMPORTANT — read and act on this)\n" +
-                       string.Join("\n", interactions));
-            parts.Add("Continue from where you left off. Act on the new information above. " +
-                       "Do NOT repeat questions that have been answered. Do NOT re-read files you already read.");
-        }
-        else
-        {
-            parts.Add("Continue from where you left off. " +
-                       "Do NOT re-ask answered questions or re-read files you already have in history.");
-        }
 
         if (!_skipCommDirective)
             parts.Add(suffix);

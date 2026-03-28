@@ -35,13 +35,15 @@ public partial class MainWindow : Window
     private int _closeCountdown;
     private string? _originalPrompt;
     private PromptBuilder? _promptBuilder;
-    private List<Dictionary<string, object>> _allEvents = new();
+    private readonly ShikigamiContextMemory _memory = new();
 
     // Horde mode
     private readonly bool _taskMode;
     private string? _currentTaskId;
     private bool _hordeWaiting;
     private DispatcherTimer? _hordePollTimer;
+    private int _markerRetries;
+    private string? _currentTaskPrompt;
 
     public MainWindow(AppArgs args)
     {
@@ -144,7 +146,7 @@ public partial class MainWindow : Window
         StopButton.Opacity = 1.0;
         await _mcp.UpdateStateAsync("working", $"Iteration {_iteration}");
 
-        var builtPrompt = _promptBuilder.Build(_iteration, _allEvents);
+        var builtPrompt = _promptBuilder.Build(_iteration, _iteration > 1 ? _memory.ToJson() : null);
 
         await Task.Run(() =>
         {
@@ -153,9 +155,9 @@ public partial class MainWindow : Window
                 Dispatcher.Invoke(() => HandleEvent(type, data));
             });
 
-            Dispatcher.Invoke(() =>
+            Dispatcher.Invoke(async () =>
             {
-                _allEvents.AddRange(result.Events);
+                _memory.FlushEvents(result.Events, _iteration);
 
                 if (result.Cost.HasValue)
                 {
@@ -197,37 +199,18 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
-                _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
-
-                if (_keepActive)
+                // Check for AGENT_COMPLETED marker
+                if (result.ResultText.Contains("AGENT_COMPLETED"))
                 {
-                    EnterIdle();
+                    AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
+                    _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
+                    CompleteWithCountdown();
+                    return;
                 }
-                else
-                {
-                    _ = _mcp.UpdateStateAsync("completed");
-                    _closeCountdown = 10;
-                    HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
-                    HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
 
-                    _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                    _closeTimer.Tick += (_, _) =>
-                    {
-                        _closeCountdown--;
-                        if (_closeCountdown <= 0)
-                        {
-                            _closeTimer.Stop();
-                            _closeTimer = null;
-                            Close();
-                        }
-                        else
-                        {
-                            HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
-                        }
-                    };
-                    _closeTimer.Start();
-                }
+                // No marker — re-launch for correction
+                AppendLog("[warn] No completion marker — re-launching for correction...", "error");
+                await LaunchPassAsync();
             });
         });
     }
@@ -265,6 +248,7 @@ public partial class MainWindow : Window
 
             var taskPrompt = PromptBuilder.BuildTaskPrompt(
                 title!, description!, _mcp.Port!.Value, agentId, _args.PoolId!, _args.LeadId);
+            _currentTaskPrompt = taskPrompt;
             _running = true;
             _userStopped = false;
             _iteration++;
@@ -305,15 +289,87 @@ public partial class MainWindow : Window
 
                     if (result.Error != null)
                     {
-                        AppendLog($"[horde] Task failed: {result.Error}", "error");
+                        AppendLog($"[horde] Task failed (CLI error): {result.Error}", "error");
                         await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.Error);
                     }
-                    else
+                    else if (result.ResultText.Contains("TASK_FAILED"))
+                    {
+                        var marker = "TASK_FAILED:";
+                        var idx = result.ResultText.LastIndexOf(marker);
+                        var reason = idx >= 0
+                            ? result.ResultText[(idx + marker.Length)..].Trim()
+                            : "Agent reported failure";
+                        AppendLog($"[horde] Task failed: {reason}", "error");
+                        await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, reason);
+                    }
+                    else if (result.ResultText.Contains("TASK_COMPLETED"))
                     {
                         AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
                         await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
                     }
+                    else
+                    {
+                        // No marker — re-launch once for correction
+                        if (_markerRetries == 0)
+                        {
+                            _markerRetries++;
+                            AppendLog("[horde] No completion marker — re-launching for correction...", "error");
+                            _iteration++;
+                            StatIteration.Text = _iteration.ToString();
+                            _running = true;
+                            StopButton.IsEnabled = true;
+                            StopButton.Opacity = 1.0;
+                            var correctionPrompt = taskPrompt +
+                                "\n\nYou did NOT include a completion marker in your previous response. " +
+                                "You MUST end with one of:\n" +
+                                "- TASK_COMPLETED\n" +
+                                "- TASK_FAILED: <reason>\n";
+                            await Task.Run(() =>
+                            {
+                                var retryResult = _cli.Run(correctionPrompt, (type2, data2) =>
+                                {
+                                    Dispatcher.Invoke(() => HandleEvent(type2, data2));
+                                });
+                                Dispatcher.Invoke(async () =>
+                                {
+                                    if (retryResult.Cost.HasValue)
+                                    {
+                                        _totalCost += retryResult.Cost.Value;
+                                        StatCost.Text = $"${_totalCost:F4}";
+                                        _ = _mcp.SubmitCostAsync(_totalCost);
+                                    }
+                                    _running = false;
+                                    StopButton.IsEnabled = false;
+                                    StopButton.Opacity = 0.25;
 
+                                    if (retryResult.ResultText.Contains("TASK_COMPLETED"))
+                                    {
+                                        AppendLog($"[horde] Task completed: {Truncate(retryResult.ResultText, 200)}", "result");
+                                        await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, retryResult.ResultText);
+                                    }
+                                    else if (retryResult.ResultText.Contains("TASK_FAILED"))
+                                    {
+                                        var m = "TASK_FAILED:";
+                                        var i = retryResult.ResultText.LastIndexOf(m);
+                                        var r = i >= 0 ? retryResult.ResultText[(i + m.Length)..].Trim() : "Agent reported failure";
+                                        AppendLog($"[horde] Task failed: {r}", "error");
+                                        await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, r);
+                                    }
+                                    else
+                                    {
+                                        AppendLog("[horde] Still no marker after correction — failing task", "error");
+                                        await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId,
+                                            "No completion marker after correction attempt");
+                                    }
+                                    _markerRetries = 0;
+                                    await DispatchNextTaskAsync();
+                                });
+                            });
+                            return;
+                        }
+                    }
+
+                    _markerRetries = 0;
                     await DispatchNextTaskAsync();
                 });
             });
@@ -435,7 +491,7 @@ public partial class MainWindow : Window
 
     private async Task PollMessagesAsync()
     {
-        if (!_mcp.Active) return;
+        if (!_mcp.Active || _closeTimer != null) return;
         try
         {
             var messages = _taskMode
@@ -463,12 +519,7 @@ public partial class MainWindow : Window
             // If not running CLI → inject message and re-launch
             if (!_running)
             {
-                _allEvents.Add(new Dictionary<string, object>
-                {
-                    ["type"] = "mcp_message",
-                    ["text"] = combined,
-                    ["time"] = DateTime.Now.ToString("HH:mm:ss"),
-                });
+                _memory.AddMessage(combined);
 
                 // Cancel input/idle wait if active
                 if (_waitingInput)
@@ -479,7 +530,18 @@ public partial class MainWindow : Window
                 }
                 if (_idle) ExitIdle();
 
-                await LaunchPassAsync();
+                if (_taskMode && _hordeWaiting)
+                {
+                    // In horde waiting state, message doesn't re-launch — just display
+                }
+                else if (_taskMode)
+                {
+                    await RelaunchHordeTaskAsync($"\n\nMessage received:\n{combined}\n\nContinue the task.");
+                }
+                else
+                {
+                    await LaunchPassAsync();
+                }
             }
         }
         catch { /* polling failure is not critical */ }
@@ -508,6 +570,37 @@ public partial class MainWindow : Window
         _idle = false;
         InputPanel.Visibility = Visibility.Collapsed;
         InputBox.Clear();
+    }
+
+    private void CompleteWithCountdown()
+    {
+        if (_keepActive)
+        {
+            EnterIdle();
+            return;
+        }
+
+        _ = _mcp.UpdateStateAsync("completed");
+        _closeCountdown = 10;
+        HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
+        HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+
+        _closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _closeTimer.Tick += (_, _) =>
+        {
+            _closeCountdown--;
+            if (_closeCountdown <= 0)
+            {
+                _closeTimer.Stop();
+                _closeTimer = null;
+                Close();
+            }
+            else
+            {
+                HeaderStatus.Text = $"completed — closing in {_closeCountdown}s";
+            }
+        };
+        _closeTimer.Start();
     }
 
     private void KeepActiveButton_Click(object sender, RoutedEventArgs e)
@@ -626,15 +719,93 @@ public partial class MainWindow : Window
         AppendLog($"  {text}", "result");
         AppendLog(sep, "sys");
 
-        _allEvents.Add(new Dictionary<string, object>
-        {
-            ["type"] = isStop ? "user_stop" : "user_input",
-            ["text"] = text,
-            ["time"] = DateTime.Now.ToString("HH:mm:ss"),
-        });
+        if (isStop)
+            _memory.AddUserStop(text);
+        else
+            _memory.AddUserInput(text);
 
         _waitingInput = false;
-        await LaunchPassAsync();
+
+        if (_taskMode)
+            await RelaunchHordeTaskAsync(isStop
+                ? $"\n\nUser stopped you and instructed:\n{text}\n\nApply the correction and complete the task."
+                : $"\n\nUser answered:\n{text}\n\nContinue the task.");
+        else
+            await LaunchPassAsync();
+    }
+
+    private async Task RelaunchHordeTaskAsync(string suffix)
+    {
+        if (_currentTaskPrompt == null) return;
+        var prompt = _currentTaskPrompt + suffix;
+        _running = true;
+        _userStopped = false;
+        _iteration++;
+        StatIteration.Text = _iteration.ToString();
+        HeaderStatus.Text = "working";
+        HeaderStatus.Foreground = DeepSpaceTheme.TealBrush;
+        StopButton.IsEnabled = true;
+        StopButton.Opacity = 1.0;
+        var agentId = _args.AgentId ?? _args.PromptId!;
+        await _mcp.PoolUpdateStateAsync(_args.PoolId!, agentId, "working", "Continuing task");
+
+        await Task.Run(() =>
+        {
+            var result = _cli.Run(prompt, (type, data) =>
+            {
+                Dispatcher.Invoke(() => HandleEvent(type, data));
+            });
+
+            Dispatcher.Invoke(async () =>
+            {
+                if (result.Cost.HasValue)
+                {
+                    _totalCost += result.Cost.Value;
+                    StatCost.Text = $"${_totalCost:F4}";
+                    _ = _mcp.SubmitCostAsync(_totalCost);
+                }
+
+                _running = false;
+                StopButton.IsEnabled = false;
+                StopButton.Opacity = 0.25;
+
+                if (_userStopped)
+                {
+                    _userStopped = false;
+                    AskUserAfterStop();
+                    return;
+                }
+
+                if (result.Error != null)
+                {
+                    AppendLog($"[horde] Task failed (CLI error): {result.Error}", "error");
+                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.Error);
+                }
+                else if (result.ResultText.Contains("TASK_FAILED"))
+                {
+                    var marker = "TASK_FAILED:";
+                    var idx = result.ResultText.LastIndexOf(marker);
+                    var reason = idx >= 0
+                        ? result.ResultText[(idx + marker.Length)..].Trim()
+                        : "Agent reported failure";
+                    AppendLog($"[horde] Task failed: {reason}", "error");
+                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId, reason);
+                }
+                else if (result.ResultText.Contains("TASK_COMPLETED"))
+                {
+                    AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
+                    await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, agentId, result.ResultText);
+                }
+                else
+                {
+                    AppendLog("[horde] No completion marker — failing task", "error");
+                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, agentId,
+                        "No completion marker after user correction");
+                }
+
+                await DispatchNextTaskAsync();
+            });
+        });
     }
 
     private void OnLogScrollChanged(object sender, ScrollChangedEventArgs e)

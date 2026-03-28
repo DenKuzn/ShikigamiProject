@@ -59,7 +59,7 @@ ShikigamiProject.sln
 │   └── Shikigami.Runner/            — WPF app (.NET 9-windows)
 │       ├── Views/                   — XAML windows
 │       ├── ViewModels/              — MVVM view models
-│       ├── Services/                — CLI runner, MCP HTTP client, prompt builder
+│       ├── Services/                — CLI runner, MCP HTTP client, prompt builder, context memory
 │       ├── Theme/                   — Deep Space color palette, styles
 │       ├── Prompts/                 — Editable prompt templates (copied to output as Prompts/)
 │       └── Shikigami.Runner.csproj
@@ -280,13 +280,13 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize p
 | PID Monitor | Background task, checks every 15s, marks dead agents |
 | Pool Management | Validate, create, get available task, cascade failure, reopen dependents, completion check |
 | Launch Service | Starts Runner process for prompt-mode and horde-mode agents |
-| Runner CLI | Launches `claude` CLI, parses stream-json events, UTF-8 encoding |
+| Runner CLI | Launches `claude` CLI, parses stream-json events (system, tool, thinking, text), UTF-8 encoding |
 | Runner GUI | Deep Space theme, header with dot pulse, stats bar, scrollable log, input panel |
 | Status Dashboard | WPF window with live stats (agents, prompts, msgs, results, logs, trash), cost banner, pool section |
 | Tray Icon | 🐇 system tray when dashboard is closed, double-click to restore |
 | Runner Window Icon | 🐇 icon on Runner window title bar (pure WPF rendering, no WinForms) |
-| PromptBuilder | MCP header + communication directives, external template files, prompt/horde modes |
-| Horde Mode | Task polling, dispatch, complete/fail reporting, pool lifecycle |
+| PromptBuilder | MCP header + communication directives, external template files, prompt/horde modes, full history JSON on iteration 2+ |
+| Horde Mode | Task polling, dispatch, complete/fail reporting, pool lifecycle, TASK_COMPLETED/TASK_FAILED marker validation |
 | Font Zoom | Ctrl + mouse wheel in Runner log area (6–30px) |
 | Build Scripts | `build-shipping.bat` (Release), `build-debug.bat` (Debug), no .pdb in Release |
 | Install Script | `install.bat` — robocopy to `~/.claude/MCPs/ShikigamiMCP/`, manual MCP registration hint |
@@ -296,16 +296,19 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize p
 | Multiline input | Input panel supports Ctrl+Enter for newlines, Enter to send |
 | Unicode-safe messaging | Prompt templates use `printf \| curl -d @-` pipe pattern for Cyrillic-safe HTTP messaging |
 | Text wrapping | Log area wraps long lines by word instead of extending horizontally |
-| Stop button | Kill CLI mid-execution, show input panel for correction, re-launch with `user_stop` context |
+| Stop button | Kill CLI mid-execution, show input panel for correction, re-launch with `user_stop` context; horde-aware (uses `RelaunchHordeTaskAsync`) |
 | Idle mode | AGENT_IDLE marker: Runner stays alive with green dot pulse, input panel open, accepts messages or user input |
 | Keep Active button | Header toggle: prevents auto-close on COMPLETED, transitions to idle instead; cancels close timer if already counting |
-| Auto-close on complete | AGENT_COMPLETED triggers 10s countdown in header (`closing in 10s...9s...`), then window closes |
+| Auto-close on complete | AGENT_COMPLETED triggers 10s countdown in header (`closing in 10s...9s...`), then window closes; message polling paused during countdown |
+| Marker validation (prompt) | Checks USER_INPUT_REQUIRED → AGENT_IDLE → AGENT_COMPLETED in order; no marker = re-launch for correction |
+| Marker validation (horde) | Checks TASK_FAILED → TASK_COMPLETED; no marker = 1 retry then fail; horde-specific Stop/Message dispatch via `RelaunchHordeTaskAsync` |
+| Horde waiting | DispatcherTimer poll (5s), distinguishes blocked/done/aborted, green dot + amber header with blocked count |
 | Prompts folder | Prompt templates moved to `Prompts/` subdirectory next to exe |
+| ShikigamiContextMemory | Filtered history (thinking, tool calls, text, user input, messages) accumulated across CLI passes, serialized as JSON into prompt for continuation |
 
 ### TODO
 | Feature | Details |
 |---|---|
-| CleanContext | Format and clean event log before submitting to server (Python context.py) |
 | Horde idle/backoff | DispatcherTimer poll (5s) done, blocked/done/aborted distinction done — needs further testing and fixes |
 | Prompt editor button | UI button to open prompt template files in external editor |
 

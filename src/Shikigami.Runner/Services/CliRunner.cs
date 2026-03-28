@@ -177,12 +177,16 @@ public sealed class CliRunner
                                         break;
                                     case "thinking":
                                         var thinkText = blk.TryGetProperty("thinking", out var thp) ? thp.GetString() ?? "" : "";
+                                        result.Events.Add(new() { ["type"] = "thinking", ["text"] = thinkText, ["time"] = ts });
                                         emit("thinking", new() { ["text"] = thinkText });
                                         break;
                                     case "text":
                                         var text = blk.TryGetProperty("text", out var txp) ? txp.GetString()?.Trim() ?? "" : "";
                                         if (!string.IsNullOrEmpty(text))
+                                        {
+                                            result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
                                             emit("text", new() { ["text"] = text });
+                                        }
                                         break;
                                 }
                             }
