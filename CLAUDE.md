@@ -290,7 +290,7 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize p
 | Font Zoom | Ctrl + mouse wheel in Runner log area (6–30px) |
 | Build Scripts | `build-shipping.bat` (Release), `build-debug.bat` (Debug), no .pdb in Release |
 | Install Script | `install.bat` — robocopy to `~/.claude/MCPs/ShikigamiMCP/`, manual MCP registration hint |
-| USER_INPUT_REQUIRED | Detects marker in CLI result, shows input panel, amber dot pulse, re-launches CLI with answer |
+| USER_INPUT_REQUIRED | Detects marker in CLI result, shows input panel, amber dot pulse, re-launches CLI with answer. Works in both prompt and horde modes |
 | Iteration loop | Re-launches CLI when message arrives (from any agent) while not running; context preserved between iterations |
 | Smart auto-scroll | Terminal-like: scrolling up freezes position, returning to bottom resumes auto-scroll |
 | Multiline input | Input panel supports Ctrl+Enter for newlines, Enter to send |
@@ -299,12 +299,13 @@ Edit these files in `~/.claude/MCPs/ShikigamiMCP/Runner/Prompts/` to customize p
 | Stop button | Kill CLI mid-execution, show input panel for correction, re-launch with `user_stop` context; horde-aware (uses `RelaunchHordeTaskAsync`) |
 | Idle mode | AGENT_IDLE marker: Runner stays alive with green dot pulse, input panel open, accepts messages or user input |
 | Keep Active button | Header toggle: prevents auto-close on COMPLETED, transitions to idle instead; cancels close timer if already counting |
-| Auto-close on complete | AGENT_COMPLETED triggers 10s countdown in header (`closing in 10s...9s...`), then window closes; message polling paused during countdown |
+| Auto-close on complete | 10s countdown then close. Prompt mode: on AGENT_COMPLETED. Horde mode: on all_done or no tasks for agent type. KeepActive → idle instead. Message polling paused during countdown |
 | Marker validation (prompt) | Checks USER_INPUT_REQUIRED → AGENT_IDLE → AGENT_COMPLETED in order; no marker = re-launch for correction |
-| Marker validation (horde) | Checks TASK_FAILED → TASK_COMPLETED; no marker = 1 retry then fail; horde-specific Stop/Message dispatch via `RelaunchHordeTaskAsync` |
+| Marker validation (horde) | Checks USER_INPUT_REQUIRED → TASK_FAILED → TASK_COMPLETED; no marker = 1 retry then fail; horde-specific Stop/Message dispatch via `RelaunchHordeTaskAsync` |
 | Horde waiting | DispatcherTimer poll (5s), distinguishes blocked/done/aborted, green dot + amber header with blocked count |
 | Prompts folder | Prompt templates moved to `Prompts/` subdirectory next to exe |
 | ShikigamiContextMemory | Filtered history (thinking, tool calls, text, user input, messages) accumulated across CLI passes, serialized as JSON into prompt for continuation. Horde mode: `BeginTask()`/`CurrentTaskJson()` scope history per task; `ToJson()` returns full history for debugging. `_tasksCompleted` only increments on TASK_COMPLETED (not on fail/error). Fixed: `_flushOffset` removed — each CLI run returns fresh Events list |
+| CLI pass refactoring | `RunCliPassAsync`/`BeginCliPass`/`FinishCliPass` — single CLI run pattern reused by all modes. `EvaluateHordeResult` — single horde marker check (returns `HordeOutcome` enum). `BuildHordePromptWithHistory` — assembles task prompt + scoped history + suffix. Eliminated nested `Task.Run → Dispatcher.Invoke(async)` — uses `await Task.Run` with WPF SynchronizationContext return |
 
 ### TODO
 | Feature | Details |

@@ -192,6 +192,17 @@ public partial class MainWindow : Window
             return HordeOutcome.Error;
         }
 
+        if (result.ResultText.Contains("USER_INPUT_REQUIRED"))
+        {
+            var marker = "USER_INPUT_REQUIRED:";
+            var idx = result.ResultText.LastIndexOf(marker);
+            var question = idx >= 0
+                ? result.ResultText[(idx + marker.Length)..].Trim()
+                : "";
+            AskUser(question);
+            return HordeOutcome.UserStopped;
+        }
+
         if (result.ResultText.Contains("TASK_FAILED"))
         {
             var marker = "TASK_FAILED:";
@@ -362,10 +373,9 @@ public partial class MainWindow : Window
         // All done
         if (resp?.TryGetProperty("all_done", out var ad) == true && ad.GetBoolean())
         {
-            AppendLog($"[horde] All tasks done ({_tasksCompleted} completed). Exiting.", "sys");
+            AppendLog($"[horde] All tasks done ({_tasksCompleted} completed).", "sys");
             await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
-            HeaderStatus.Text = "completed";
-            HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+            CompleteWithCountdown();
             return;
         }
 
@@ -392,8 +402,7 @@ public partial class MainWindow : Window
         {
             AppendLog($"[horde] No more tasks for {_args.AgentType} ({_tasksCompleted} done).", "sys");
             await _mcp.PoolUnregisterAsync(_args.PoolId!, agentId);
-            HeaderStatus.Text = "completed";
-            HeaderStatus.Foreground = DeepSpaceTheme.GreenBrush;
+            CompleteWithCountdown();
         }
     }
 
