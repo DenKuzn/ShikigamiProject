@@ -60,7 +60,7 @@ public sealed class PromptBuilder
     public string FullPromptDisplay()
     {
         var suffix = _skipCommDirective ? "" : _commDirective;
-        return McpHeader() + $"## Your task:\n{_originalPrompt}" + suffix;
+        return McpHeader() + suffix + $"\n## Your task:\n{_originalPrompt}";
     }
 
     /// <summary>
@@ -72,18 +72,17 @@ public sealed class PromptBuilder
         var suffix = _skipCommDirective ? "" : _commDirective;
 
         if (iteration == 1 || string.IsNullOrEmpty(cleanContextJson))
-            return mcp + $"## Your task:\n{_originalPrompt}" + suffix;
+            return mcp + suffix + $"\n## Your task:\n{_originalPrompt}";
 
         var parts = new List<string>
         {
-            mcp + $"## Your task:\n{_originalPrompt}",
+            mcp + suffix,
             $"## Full History (all previous passes)\n```json\n{cleanContextJson}\n```",
             "Continue from where you left off. " +
             "Do NOT re-ask answered questions or re-read files you already have in history.",
+            $"## Your task:\n{_originalPrompt}",
         };
 
-        if (!_skipCommDirective)
-            parts.Add(suffix);
         return string.Join("\n\n", parts);
     }
 
@@ -105,7 +104,7 @@ public sealed class PromptBuilder
             .Replace("{lead_id}", leadId)
             .Replace("{pool_id}", poolId);
 
-        return $"{commDirective}\n{mcpHeader}\n## Task: {title}\n\n{description}";
+        return $"{mcpHeader}\n{commDirective}\n\n## Task: {title}\n\n{description}";
     }
 
     // ── File loading ──
