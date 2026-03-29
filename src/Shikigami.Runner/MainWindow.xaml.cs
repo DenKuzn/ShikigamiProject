@@ -23,6 +23,7 @@ public partial class MainWindow : Window, IRunnerView
     private bool _dotOn;
     private bool _autoScroll = true;
     private double _logFontSize = 12;
+    private readonly List<TextBlock> _collapsibleTextBlocks = new();
     private int _closeCountdown;
 
     public MainWindow(AppArgs args)
@@ -77,8 +78,8 @@ public partial class MainWindow : Window, IRunnerView
 
     public void AppendLog(string text, string tag)
     {
-        var para = LogBox.Document.Blocks.LastBlock as Paragraph ?? new Paragraph();
-        if (para.Inlines.Count > 0 || LogBox.Document.Blocks.Count == 0)
+        var para = LogBox.Document.Blocks.LastBlock as Paragraph;
+        if (para == null || para.Inlines.Count > 0 || LogBox.Document.Blocks.Count == 0)
         {
             para = new Paragraph { Margin = new Thickness(0, 1, 0, 1) };
             LogBox.Document.Blocks.Add(para);
@@ -103,6 +104,86 @@ public partial class MainWindow : Window, IRunnerView
         if (_autoScroll)
             LogScroller.ScrollToEnd();
     }
+
+    public void AppendCollapsible(string header, string body, string headerTag, string bodyTag = "text")
+    {
+        var arrowBlock = new TextBlock
+        {
+            Text = "▸ ",
+            Foreground = GetTagBrush(headerTag),
+            FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+            FontSize = _logFontSize,
+        };
+
+        var headerBlock = new TextBlock
+        {
+            Text = header,
+            Foreground = GetTagBrush(headerTag),
+            FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+            FontSize = _logFontSize,
+        };
+
+        var headerPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Cursor = Cursors.Hand,
+            Background = Brushes.Transparent, // enable hit-test on empty space
+        };
+        headerPanel.Children.Add(arrowBlock);
+        headerPanel.Children.Add(headerBlock);
+
+        var bodyBlock = new TextBlock
+        {
+            Text = body,
+            Foreground = GetTagBrush(bodyTag),
+            FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+            FontSize = _logFontSize,
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = Visibility.Collapsed,
+            Margin = new Thickness(16, 2, 0, 2),
+        };
+
+        headerPanel.MouseLeftButtonDown += (_, _) =>
+        {
+            if (bodyBlock.Visibility == Visibility.Collapsed)
+            {
+                bodyBlock.Visibility = Visibility.Visible;
+                arrowBlock.Text = "▾ ";
+            }
+            else
+            {
+                bodyBlock.Visibility = Visibility.Collapsed;
+                arrowBlock.Text = "▸ ";
+            }
+        };
+
+        var container = new StackPanel();
+        container.Children.Add(headerPanel);
+        container.Children.Add(bodyBlock);
+
+        _collapsibleTextBlocks.Add(arrowBlock);
+        _collapsibleTextBlocks.Add(headerBlock);
+        _collapsibleTextBlocks.Add(bodyBlock);
+
+        var block = new BlockUIContainer(container) { Margin = new Thickness(0, 1, 0, 1) };
+        LogBox.Document.Blocks.Add(block);
+
+        if (_autoScroll)
+            LogScroller.ScrollToEnd();
+    }
+
+    private SolidColorBrush GetTagBrush(string tag) => tag switch
+    {
+        "sys" => DeepSpaceTheme.FgDimBrush,
+        "tool" => DeepSpaceTheme.CyanBrush,
+        "text" => DeepSpaceTheme.FgBrush,
+        "prompt" => DeepSpaceTheme.LavenderBrush,
+        "result" => DeepSpaceTheme.GreenBrush,
+        "error" => DeepSpaceTheme.RedBrush,
+        "task" => DeepSpaceTheme.AmberBrush,
+        "dim" => DeepSpaceTheme.FgDimBrush,
+        _ => DeepSpaceTheme.FgBrush,
+    };
 
     public void SetHeaderStatus(string text, StatusColor color)
     {
@@ -270,6 +351,8 @@ public partial class MainWindow : Window, IRunnerView
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
         _logFontSize = Math.Clamp(_logFontSize + (e.Delta > 0 ? 1 : -1), 6, 30);
         LogBox.FontSize = _logFontSize;
+        foreach (var tb in _collapsibleTextBlocks)
+            tb.FontSize = _logFontSize;
         e.Handled = true;
     }
 

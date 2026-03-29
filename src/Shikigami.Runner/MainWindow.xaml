@@ -220,6 +220,7 @@
                           VerticalScrollBarVisibility="Auto" Background="#08060F">
                 <RichTextBox x:Name="LogBox" Background="#08060F" Foreground="#B8C2D0"
                              FontFamily="Consolas" FontSize="12" IsReadOnly="True"
+                             IsDocumentEnabled="True"
                              BorderThickness="0" Padding="16,4"
                              VerticalScrollBarVisibility="Disabled">
                     <RichTextBox.Document>

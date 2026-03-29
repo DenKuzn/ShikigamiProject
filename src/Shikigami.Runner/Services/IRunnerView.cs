@@ -9,6 +9,7 @@ public interface IRunnerView
 {
     // ── Log ──
     void AppendLog(string text, string tag);
+    void AppendCollapsible(string header, string body, string headerTag, string bodyTag = "text");
 
     // ── Header ──
     void SetHeaderStatus(string text, StatusColor color);

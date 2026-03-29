@@ -120,7 +120,18 @@ public sealed class RunnerSession
                 Process.GetCurrentProcess().Id,
                 _args.LeadId);
 
-            _view.AppendLog("[prompt] " + _promptBuilder.FullPromptDisplay(), "prompt");
+            var fullPrompt = _promptBuilder.FullPromptDisplay();
+            var taskMarker = "\n## Your task:";
+            var taskIdx = fullPrompt.IndexOf(taskMarker);
+            if (taskIdx >= 0)
+            {
+                _view.AppendCollapsible("[Base Shikigami Prompt]", fullPrompt[..taskIdx].Trim(), "prompt", "prompt");
+                _view.AppendCollapsible("[Shikigami Task]", fullPrompt[(taskIdx + 1)..].Trim(), "task", "task");
+            }
+            else
+            {
+                _view.AppendCollapsible("[Base Shikigami Prompt]", fullPrompt, "prompt", "prompt");
+            }
             await LaunchPassAsync();
         }
     }
@@ -295,7 +306,11 @@ public sealed class RunnerSession
                 _view.AppendLog($"  {data["text"]}", "text");
                 break;
             case "thinking":
-                _view.AppendLog("  (thinking...)", "dim");
+                var thinkText = data.TryGetValue("text", out var th) ? th?.ToString() ?? "" : "";
+                if (!string.IsNullOrEmpty(thinkText))
+                    _view.AppendCollapsible("  (thinking...)", thinkText, "dim", "dim");
+                else
+                    _view.AppendLog("  (thinking...)", "dim");
                 break;
             case "error":
                 _view.AppendLog($"  ERROR: {data["message"]}", "error");
