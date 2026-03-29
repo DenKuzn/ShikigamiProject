@@ -185,7 +185,7 @@ public sealed class RunnerSession
             var parts = new List<string>();
             foreach (var msg in messages)
             {
-                var sender = msg.TryGetProperty("sender_id", out var s) ? s.GetString() : "?";
+                var sender = msg.TryGetProperty("senderId", out var s) ? s.GetString() : "?";
                 var text = msg.TryGetProperty("text", out var t) ? t.GetString() : "";
                 parts.Add($"[Message from {sender}]: {text}");
             }
