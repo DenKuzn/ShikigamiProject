@@ -232,8 +232,10 @@ public sealed class CliRunner
                         foreach (var prop in mu.EnumerateObject())
                         {
                             if (prop.Value.TryGetProperty("contextWindow", out var cw))
+                            {
                                 result.ContextWindow = cw.GetInt32();
-                            break;
+                                break;
+                            }
                         }
                     }
                     var isError = evt.TryGetProperty("is_error", out var ie) && ie.GetBoolean();

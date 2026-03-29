@@ -274,10 +274,17 @@ public sealed class RunnerSession
             _ = _mcp.SubmitCostAsync(_totalCost);
         }
 
-        if (result.InputTokens > 0 && result.ContextWindow > 0)
+        if (result.InputTokens > 0)
         {
-            var pct = (int)(100.0 * result.InputTokens / result.ContextWindow);
-            _view.SetStat(StatField.Context, $"{FormatTokens(result.InputTokens)} / {FormatTokens(result.ContextWindow)} ({pct}%)");
+            if (result.ContextWindow > 0)
+            {
+                var pct = (int)(100.0 * result.InputTokens / result.ContextWindow);
+                _view.SetStat(StatField.Context, $"{FormatTokens(result.InputTokens)} / {FormatTokens(result.ContextWindow)} ({pct}%)");
+            }
+            else
+            {
+                _view.SetStat(StatField.Context, FormatTokens(result.InputTokens));
+            }
         }
 
         _view.SetStopButton(false, 0.25);
