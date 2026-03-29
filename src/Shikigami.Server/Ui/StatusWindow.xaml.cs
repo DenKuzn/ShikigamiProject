@@ -10,6 +10,7 @@ namespace Shikigami.Server.Ui;
 public partial class StatusWindow : Window
 {
     private readonly ShikigamiState _state;
+    private readonly ServerSettings _settings;
     private readonly DispatcherTimer _updateTimer;
     private readonly DispatcherTimer _dotTimer;
     private readonly Forms.NotifyIcon _trayIcon;
@@ -26,10 +27,12 @@ public partial class StatusWindow : Window
     private static readonly SolidColorBrush CyanBrush = Frozen("#60A5FA");
     private static readonly SolidColorBrush LavenderBrush = Frozen("#A78BFA");
 
-    public StatusWindow(ShikigamiState state)
+    public StatusWindow(ShikigamiState state, ServerSettings settings)
     {
         InitializeComponent();
         _state = state;
+        _settings = settings;
+        UpdateAutoShowDot();
 
         // Window icon
         Icon = EmojiIcon.CreateWpfIcon();
@@ -68,7 +71,7 @@ public partial class StatusWindow : Window
         Refresh();
     }
 
-    private void HideToTray()
+    internal void HideToTray()
     {
         Hide();
         _trayIcon.Visible = true;
@@ -200,6 +203,18 @@ public partial class StatusWindow : Window
             FontSize = size,
             FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
         };
+    }
+
+    private void AutoShowToggle_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _settings.ShowWindowOnStartup = !_settings.ShowWindowOnStartup;
+        _settings.Save();
+        UpdateAutoShowDot();
+    }
+
+    private void UpdateAutoShowDot()
+    {
+        AutoShowDot.Fill = _settings.ShowWindowOnStartup ? GreenBrush : FgDimBrush;
     }
 
     private static SolidColorBrush Frozen(string hex)

@@ -201,6 +201,15 @@
                                    FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
                                    Foreground="#34D399"/>
                     </StackPanel>
+                    <StackPanel Margin="0,0,28,0">
+                        <TextBlock Text="文 脈" FontFamily="Yu Gothic UI" FontSize="9"
+                                   Foreground="#4A3D65" FontWeight="Bold"
+                                   ToolTip="Context window usage"
+                                   ToolTipService.InitialShowDelay="0"/>
+                        <TextBlock x:Name="StatContext" Text="—"
+                                   FontFamily="Bahnschrift" FontSize="15" FontWeight="Bold"
+                                   Foreground="#A78BFA"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

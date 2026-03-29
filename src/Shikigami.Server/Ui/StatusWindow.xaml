@@ -93,9 +93,21 @@
                                        FontSize="14" FontWeight="Bold" Foreground="{StaticResource Lavender}"/>
                         </StackPanel>
                     </StackPanel>
-                    <TextBlock x:Name="PortLabel" Text=":..." FontFamily="{StaticResource FontMono}"
-                               FontSize="16" Foreground="{StaticResource FgDim}"
-                               HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Border x:Name="AutoShowToggle" Background="Transparent" Cursor="Hand"
+                                MouseLeftButtonDown="AutoShowToggle_Click" Margin="0,0,10,0"
+                                ToolTip="Show window on startup" ToolTipService.InitialShowDelay="0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x76EE;" FontFamily="{StaticResource FontUi}" FontSize="14"
+                                           Foreground="{StaticResource FgDim}" VerticalAlignment="Center"
+                                           Margin="0,0,4,0"/>
+                                <Ellipse x:Name="AutoShowDot" Width="8" Height="8"
+                                         Fill="{StaticResource Green}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="PortLabel" Text=":..." FontFamily="{StaticResource FontMono}"
+                                   FontSize="16" Foreground="{StaticResource FgDim}"/>
+                    </StackPanel>
                 </Grid>
             </Border>
             <!-- Cursed energy flow line -->

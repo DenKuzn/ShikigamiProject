@@ -12,12 +12,17 @@ public static class StatusWindowLauncher
 {
     public static void Start(ShikigamiState state)
     {
+        var settings = ServerSettings.Load();
+
         var thread = new Thread(() =>
         {
             try
             {
-                var window = new StatusWindow(state);
-                window.Show();
+                var window = new StatusWindow(state, settings);
+                if (settings.ShowWindowOnStartup)
+                    window.Show();
+                else
+                    window.HideToTray();
                 Dispatcher.Run();
             }
             catch

@@ -78,10 +78,16 @@ public partial class MainWindow : Window, IRunnerView
 
     public void AppendLog(string text, string tag)
     {
+        // Convert leading spaces to left margin — consistent for wrapping and \n
+        var spaceCount = text.Length - text.TrimStart(' ').Length;
+        if (spaceCount > 0)
+            text = text.TrimStart(' ');
+        var leftMargin = spaceCount * _logFontSize * 0.6;
+
         var para = LogBox.Document.Blocks.LastBlock as Paragraph;
         if (para == null || para.Inlines.Count > 0 || LogBox.Document.Blocks.Count == 0)
         {
-            para = new Paragraph { Margin = new Thickness(0, 1, 0, 1) };
+            para = new Paragraph { Margin = new Thickness(leftMargin, 1, 0, 1) };
             LogBox.Document.Blocks.Add(para);
         }
 
@@ -206,6 +212,7 @@ public partial class MainWindow : Window, IRunnerView
             case StatField.Tools: StatTools.Text = value; break;
             case StatField.Cost: StatCost.Text = value; break;
             case StatField.Tasks: StatTasks.Text = value; break;
+            case StatField.Context: StatContext.Text = value; break;
         }
     }
 

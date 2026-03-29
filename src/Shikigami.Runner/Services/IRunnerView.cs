@@ -44,4 +44,4 @@ public interface IRunnerView
 
 public enum StatusColor { Teal, Amber, Green, Red }
 
-public enum StatField { Iteration, Tools, Cost, Tasks }
+public enum StatField { Iteration, Tools, Cost, Tasks, Context }

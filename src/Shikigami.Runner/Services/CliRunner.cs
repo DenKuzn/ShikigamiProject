@@ -10,6 +10,7 @@ namespace Shikigami.Runner.Services;
 public sealed class RunResult
 {
     public string ResultText { get; set; } = "";
+    public string LastTextBlock { get; set; } = "";
     public int ToolsUsed { get; set; }
     public double? Cost { get; set; }
     public List<Dictionary<string, object>> Events { get; set; } = new();
@@ -185,6 +186,7 @@ public sealed class CliRunner
                                         var text = blk.TryGetProperty("text", out var txp) ? txp.GetString()?.Trim() ?? "" : "";
                                         if (!string.IsNullOrEmpty(text))
                                         {
+                                            result.LastTextBlock = text;
                                             result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
                                             emit("text", new() { ["text"] = text });
                                         }

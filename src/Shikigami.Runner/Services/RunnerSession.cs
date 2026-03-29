@@ -274,6 +274,12 @@ public sealed class RunnerSession
             _ = _mcp.SubmitCostAsync(_totalCost);
         }
 
+        if (result.InputTokens > 0 && result.ContextWindow > 0)
+        {
+            var pct = (int)(100.0 * result.InputTokens / result.ContextWindow);
+            _view.SetStat(StatField.Context, $"{FormatTokens(result.InputTokens)} / {FormatTokens(result.ContextWindow)} ({pct}%)");
+        }
+
         _view.SetStopButton(false, 0.25);
     }
 
@@ -303,7 +309,7 @@ public sealed class RunnerSession
                 _view.AppendLog($"  [{_toolCount}] {name}  {detail}", "tool");
                 break;
             case "text":
-                _view.AppendLog($"  {data["text"]}", "text");
+                _view.AppendLog($"{data["text"]}", "text");
                 break;
             case "thinking":
                 var thinkText = data.TryGetValue("text", out var th) ? th?.ToString() ?? "" : "";
@@ -341,28 +347,30 @@ public sealed class RunnerSession
             return;
         }
 
-        if (result.ResultText.Contains("USER_INPUT_REQUIRED"))
+        var markerText = GetMarkerText(result);
+
+        if (markerText.Contains("USER_INPUT_REQUIRED"))
         {
             var marker = "USER_INPUT_REQUIRED:";
-            var idx = result.ResultText.LastIndexOf(marker);
+            var idx = markerText.LastIndexOf(marker);
             var question = idx >= 0
-                ? result.ResultText[(idx + marker.Length)..].Trim()
+                ? markerText[(idx + marker.Length)..].Trim()
                 : "";
             AskUser(question);
             return;
         }
 
-        if (result.ResultText.Contains("AGENT_IDLE"))
+        if (markerText.Contains("AGENT_IDLE"))
         {
-            _view.AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
+            _view.AppendLog("[done]", "result");
             _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
             EnterIdle();
             return;
         }
 
-        if (result.ResultText.Contains("AGENT_COMPLETED"))
+        if (markerText.Contains("AGENT_COMPLETED"))
         {
-            _view.AppendLog($"[done] Result: {Truncate(result.ResultText, 300)}", "result");
+            _view.AppendLog("[done]", "result");
             _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
             CompleteWithCountdown();
             return;
@@ -392,34 +400,36 @@ public sealed class RunnerSession
             return HordeOutcome.Error;
         }
 
-        if (result.ResultText.Contains("USER_INPUT_REQUIRED"))
+        var markerText = GetMarkerText(result);
+
+        if (markerText.Contains("USER_INPUT_REQUIRED"))
         {
             var marker = "USER_INPUT_REQUIRED:";
-            var idx = result.ResultText.LastIndexOf(marker);
+            var idx = markerText.LastIndexOf(marker);
             var question = idx >= 0
-                ? result.ResultText[(idx + marker.Length)..].Trim()
+                ? markerText[(idx + marker.Length)..].Trim()
                 : "";
             AskUser(question);
             return HordeOutcome.UserStopped;
         }
 
-        if (result.ResultText.Contains("TASK_FAILED"))
+        if (markerText.Contains("TASK_FAILED"))
         {
             var marker = "TASK_FAILED:";
-            var idx = result.ResultText.LastIndexOf(marker);
+            var idx = markerText.LastIndexOf(marker);
             var reason = idx >= 0
-                ? result.ResultText[(idx + marker.Length)..].Trim()
+                ? markerText[(idx + marker.Length)..].Trim()
                 : "Agent reported failure";
             _view.AppendLog($"[horde] Task failed: {reason}", "error");
             await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId, reason);
             return HordeOutcome.Failed;
         }
 
-        if (result.ResultText.Contains("TASK_COMPLETED"))
+        if (markerText.Contains("TASK_COMPLETED"))
         {
             _tasksCompleted++;
             _view.SetStat(StatField.Tasks, _tasksCompleted.ToString());
-            _view.AppendLog($"[horde] Task completed: {Truncate(result.ResultText, 200)}", "result");
+            _view.AppendLog("[horde] Task completed.", "result");
             await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, _agentId, result.ResultText);
             return HordeOutcome.Completed;
         }
@@ -650,6 +660,16 @@ public sealed class RunnerSession
     //  Helpers
     // ════════════════════════════════════════════════════════════════
 
+    /// <summary>
+    /// Returns the best text to check for markers.
+    /// Prefers ResultText (from result event), falls back to the last text block from streaming.
+    /// </summary>
+    private static string GetMarkerText(RunResult result) =>
+        !string.IsNullOrEmpty(result.ResultText) ? result.ResultText : result.LastTextBlock;
+
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "...";
+
+    private static string FormatTokens(int tokens) =>
+        tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:F1}M" : $"{tokens / 1000}k";
 }
