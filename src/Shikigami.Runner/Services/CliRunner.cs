@@ -257,7 +257,7 @@ public sealed class CliRunner
         if (!blk.TryGetProperty("input", out var inp)) return "";
         return name switch
         {
-            "Bash" => inp.TryGetProperty("command", out var c) ? Truncate(c.GetString(), 80) : "",
+            "Bash" => inp.TryGetProperty("command", out var c) ? c.GetString() ?? "" : "",
             "Read" => inp.TryGetProperty("file_path", out var f) ? f.GetString() ?? "" : "",
             "Write" => inp.TryGetProperty("file_path", out var w) ? w.GetString() ?? "" : "",
             "Edit" => inp.TryGetProperty("file_path", out var e) ? e.GetString() ?? "" : "",
@@ -266,9 +266,6 @@ public sealed class CliRunner
             _ => "",
         };
     }
-
-    private static string Truncate(string? s, int max) =>
-        s == null ? "" : s.Length <= max ? s : s[..max];
 
     private static string FindClaude()
     {
