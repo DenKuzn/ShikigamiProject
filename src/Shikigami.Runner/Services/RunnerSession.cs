@@ -184,7 +184,12 @@ public sealed class RunnerSession
 
     public async Task PollMessagesAsync()
     {
-        if (!_mcp.Active || _state == RunnerState.Completing) return;
+        // Only poll when agent is idle/waiting — while CLI is running, the agent
+        // checks messages itself via MCP tools. Consuming here would steal them.
+        if (!_mcp.Active) return;
+        if (_state is not (RunnerState.Idle or RunnerState.WaitingInputQuestion
+                       or RunnerState.WaitingInputStop or RunnerState.HordeWaiting)) return;
+
         try
         {
             var messages = _args.TaskMode
@@ -208,29 +213,26 @@ public sealed class RunnerSession
             _view.AppendLog($"  {combined}", "text");
             _view.AppendLog(sep, "sys");
 
-            if (_state != RunnerState.Working)
+            _memory.AddMessage(combined);
+
+            if (_state is RunnerState.WaitingInputQuestion or RunnerState.WaitingInputStop)
             {
-                _memory.AddMessage(combined);
+                _view.DisableInput();
+                _view.ClearInput();
+            }
+            if (_state == RunnerState.Idle) ExitIdle();
 
-                if (_state is RunnerState.WaitingInputQuestion or RunnerState.WaitingInputStop)
-                {
-                    _view.DisableInput();
-                    _view.ClearInput();
-                }
-                if (_state == RunnerState.Idle) ExitIdle();
-
-                if (_args.TaskMode && _state == RunnerState.HordeWaiting)
-                {
-                    // In horde waiting state, message doesn't re-launch — just display
-                }
-                else if (_args.TaskMode)
-                {
-                    await RelaunchHordeTaskAsync($"\n\nMessage received:\n{combined}\n\nContinue the task.");
-                }
-                else
-                {
-                    await LaunchPassAsync();
-                }
+            if (_args.TaskMode && _state == RunnerState.HordeWaiting)
+            {
+                // In horde waiting state, message doesn't re-launch — just display
+            }
+            else if (_args.TaskMode)
+            {
+                await RelaunchHordeTaskAsync($"\n\nMessage received:\n{combined}\n\nContinue the task.");
+            }
+            else
+            {
+                await LaunchPassAsync();
             }
         }
         catch { /* polling failure is not critical */ }

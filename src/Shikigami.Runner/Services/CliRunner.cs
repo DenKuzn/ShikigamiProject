@@ -161,39 +161,43 @@ public sealed class CliRunner
                 case "assistant":
                     if (evt.TryGetProperty("message", out var msg))
                     {
-                        if (msg.TryGetProperty("content", out var content))
+                        try
                         {
-                            foreach (var blk in content.EnumerateArray())
+                            if (msg.TryGetProperty("content", out var content))
                             {
-                                var blkType = blk.TryGetProperty("type", out var bt) ? bt.GetString() : null;
-                                switch (blkType)
+                                foreach (var blk in content.EnumerateArray())
                                 {
-                                    case "tool_use":
-                                        toolN++;
-                                        result.ToolsUsed++;
-                                        var name = blk.TryGetProperty("name", out var np) ? np.GetString() ?? "?" : "?";
-                                        var detail = ExtractToolDetail(blk, name);
-                                        var fullInput = blk.TryGetProperty("input", out var fip) ? fip.ToString() : "";
-                                        result.Events.Add(new() { ["type"] = "tool", ["name"] = name, ["detail"] = detail, ["full_input"] = fullInput, ["time"] = ts });
-                                        emit("tool", new() { ["number"] = toolN, ["name"] = name, ["detail"] = detail });
-                                        break;
-                                    case "thinking":
-                                        var thinkText = blk.TryGetProperty("thinking", out var thp) ? thp.GetString() ?? "" : "";
-                                        result.Events.Add(new() { ["type"] = "thinking", ["text"] = thinkText, ["time"] = ts });
-                                        emit("thinking", new() { ["text"] = thinkText });
-                                        break;
-                                    case "text":
-                                        var text = blk.TryGetProperty("text", out var txp) ? txp.GetString()?.Trim() ?? "" : "";
-                                        if (!string.IsNullOrEmpty(text))
-                                        {
-                                            result.LastTextBlock = text;
-                                            result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
-                                            emit("text", new() { ["text"] = text });
-                                        }
-                                        break;
+                                    var blkType = blk.TryGetProperty("type", out var bt) ? bt.GetString() : null;
+                                    switch (blkType)
+                                    {
+                                        case "tool_use":
+                                            toolN++;
+                                            result.ToolsUsed++;
+                                            var name = blk.TryGetProperty("name", out var np) ? np.GetString() ?? "?" : "?";
+                                            var detail = ExtractToolDetail(blk, name);
+                                            var fullInput = blk.TryGetProperty("input", out var fip) ? fip.ToString() : "";
+                                            result.Events.Add(new() { ["type"] = "tool", ["name"] = name, ["detail"] = detail, ["full_input"] = fullInput, ["time"] = ts });
+                                            emit("tool", new() { ["number"] = toolN, ["name"] = name, ["detail"] = detail });
+                                            break;
+                                        case "thinking":
+                                            var thinkText = blk.TryGetProperty("thinking", out var thp) ? thp.GetString() ?? "" : "";
+                                            result.Events.Add(new() { ["type"] = "thinking", ["text"] = thinkText, ["time"] = ts });
+                                            emit("thinking", new() { ["text"] = thinkText });
+                                            break;
+                                        case "text":
+                                            var text = blk.TryGetProperty("text", out var txp) ? txp.GetString()?.Trim() ?? "" : "";
+                                            if (!string.IsNullOrEmpty(text))
+                                            {
+                                                result.LastTextBlock = text;
+                                                result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
+                                                emit("text", new() { ["text"] = text });
+                                            }
+                                            break;
+                                    }
                                 }
                             }
                         }
+                        catch { /* content processing must not block usage extraction */ }
 
                         if (msg.TryGetProperty("usage", out var usage))
                         {
@@ -231,11 +235,21 @@ public sealed class CliRunner
                     {
                         foreach (var prop in mu.EnumerateObject())
                         {
-                            if (prop.Value.TryGetProperty("contextWindow", out var cw))
-                            {
+                            var md = prop.Value;
+                            if (md.TryGetProperty("contextWindow", out var cw))
                                 result.ContextWindow = cw.GetInt32();
-                                break;
+
+                            // Extract tokens from modelUsage (camelCase) as fallback
+                            if (result.InputTokens == 0)
+                            {
+                                var muInp = (md.TryGetProperty("inputTokens", out var mi) ? mi.GetInt32() : 0)
+                                          + (md.TryGetProperty("cacheCreationInputTokens", out var mcc) ? mcc.GetInt32() : 0)
+                                          + (md.TryGetProperty("cacheReadInputTokens", out var mcr) ? mcr.GetInt32() : 0);
+                                var muOutp = md.TryGetProperty("outputTokens", out var mo) ? mo.GetInt32() : 0;
+                                if (muInp > 0) result.InputTokens = muInp;
+                                if (muOutp > 0) result.OutputTokens = muOutp;
                             }
+                            break;
                         }
                     }
                     var isError = evt.TryGetProperty("is_error", out var ie) && ie.GetBoolean();
