@@ -11,3 +11,14 @@ If you completed your task and no follow-up is needed, end your response with:
 AGENT_COMPLETED
 
 CRITICAL: Every final response MUST end with one of these markers: USER_INPUT_REQUIRED, AGENT_IDLE, or AGENT_COMPLETED. A response without a marker is treated as an error.
+
+## Result Format
+When finishing (AGENT_COMPLETED or AGENT_IDLE), wrap your final result summary in markers:
+
+AGENT_RESULT_BEGIN
+<your result summary here>
+AGENT_RESULT_END
+
+AGENT_COMPLETED
+
+The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. Without these markers, the result may be lost or incomplete. Place them in the same response as your completion marker.

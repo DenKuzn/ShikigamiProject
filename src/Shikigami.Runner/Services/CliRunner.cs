@@ -11,6 +11,7 @@ public sealed class RunResult
 {
     public string ResultText { get; set; } = "";
     public string LastTextBlock { get; set; } = "";
+    public string? MarkedResult { get; set; }
     public int ToolsUsed { get; set; }
     public double? Cost { get; set; }
     public List<Dictionary<string, object>> Events { get; set; } = new();
@@ -136,6 +137,7 @@ public sealed class CliRunner
         }
 
         var toolN = 0;
+        var textBlocks = new List<string>();
         while (true)
         {
             var line = _proc.StandardOutput.ReadLine();
@@ -189,8 +191,16 @@ public sealed class CliRunner
                                             if (!string.IsNullOrEmpty(text))
                                             {
                                                 result.LastTextBlock = text;
+                                                textBlocks.Add(text);
                                                 result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
                                                 emit("text", new() { ["text"] = text });
+
+                                                if (result.MarkedResult == null && text.Contains("AGENT_RESULT_END"))
+                                                {
+                                                    result.MarkedResult = ExtractMarkedResult(string.Join("\n", textBlocks));
+                                                    if (result.MarkedResult != null)
+                                                        emit("marked_result", new() { ["text"] = result.MarkedResult });
+                                                }
                                             }
                                             break;
                                     }
@@ -207,6 +217,7 @@ public sealed class CliRunner
                             var outp = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0;
                             result.InputTokens = inp;
                             result.OutputTokens = outp;
+                            emit("usage", new() { ["input_tokens"] = inp, ["output_tokens"] = outp });
                         }
                     }
                     break;
@@ -267,7 +278,23 @@ public sealed class CliRunner
 
         _proc.WaitForExit();
         _proc = null;
+
+        // Fallback: if streaming didn't catch markers (e.g. split across blocks without AGENT_RESULT_END trigger)
+        if (result.MarkedResult == null)
+            result.MarkedResult = ExtractMarkedResult(string.Join("\n", textBlocks));
+
         return result;
+    }
+
+    private static string? ExtractMarkedResult(string allText)
+    {
+        const string begin = "AGENT_RESULT_BEGIN";
+        const string end = "AGENT_RESULT_END";
+        var beginIdx = allText.IndexOf(begin);
+        var endIdx = allText.LastIndexOf(end);
+        if (beginIdx < 0 || endIdx <= beginIdx) return null;
+
+        return allText[(beginIdx + begin.Length)..endIdx].Trim();
     }
 
     private static string ExtractToolDetail(JsonElement blk, string name)

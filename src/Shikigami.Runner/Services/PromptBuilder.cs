@@ -134,7 +134,16 @@ public sealed class PromptBuilder
         "AGENT_COMPLETED\n\n" +
         "CRITICAL: Every final response MUST end with one of these markers: " +
         "USER_INPUT_REQUIRED, AGENT_IDLE, or AGENT_COMPLETED. " +
-        "A response without a marker is treated as an error.\n";
+        "A response without a marker is treated as an error.\n\n" +
+        "## Result Format\n" +
+        "When finishing (AGENT_COMPLETED or AGENT_IDLE), wrap your final result summary in markers:\n\n" +
+        "AGENT_RESULT_BEGIN\n" +
+        "<your result summary here>\n" +
+        "AGENT_RESULT_END\n\n" +
+        "AGENT_COMPLETED\n\n" +
+        "The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. " +
+        "Without these markers, the result may be lost or incomplete. " +
+        "Place them in the same response as your completion marker.\n";
 
     private const string DefaultHordeCommDirective =
         "\n\n## Communication\n" +
@@ -147,11 +156,15 @@ public sealed class PromptBuilder
         "CRITICAL: Every final response MUST end with one of these markers: " +
         "USER_INPUT_REQUIRED, TASK_COMPLETED, or TASK_FAILED. " +
         "A response without a marker is treated as an error.\n\n" +
-        "## Task Completion Report\n" +
-        "Before the TASK_COMPLETED marker, write a brief result summary:\n" +
-        "- If fully done: 'Task \"{title}\" completed fully.' then TASK_COMPLETED\n" +
-        "- If done with deviations: 'Task \"{title}\" completed. " +
-        "Deviations: [desc]. Additions: [desc].' then TASK_COMPLETED\n";
+        "## Result Format\n" +
+        "When finishing (TASK_COMPLETED), wrap your result summary in markers:\n\n" +
+        "AGENT_RESULT_BEGIN\n" +
+        "Task \"{title}\" completed. <brief summary of what was done, deviations, additions>\n" +
+        "AGENT_RESULT_END\n\n" +
+        "TASK_COMPLETED\n\n" +
+        "The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. " +
+        "Without these markers, the result may be lost or incomplete. " +
+        "Place them in the same response as your completion marker.\n";
 
     private const string DefaultMcpHeader =
         "## MCP Connection\n" +

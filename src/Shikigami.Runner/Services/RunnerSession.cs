@@ -327,6 +327,15 @@ public sealed class RunnerSession
                 else
                     _view.AppendLog("  (thinking...)", "dim");
                 break;
+            case "usage":
+                var inpTok = (int)data["input_tokens"];
+                if (inpTok > 0)
+                    _view.SetStat(StatField.Context, FormatTokens(inpTok));
+                break;
+            case "marked_result":
+                var markedText = data["text"].ToString() ?? "";
+                _ = _mcp.SubmitLogAsync(new List<Dictionary<string, object>>(), markedText);
+                break;
             case "error":
                 _view.AppendLog($"  ERROR: {data["message"]}", "error");
                 break;
@@ -372,7 +381,7 @@ public sealed class RunnerSession
         if (markerText.Contains("AGENT_IDLE"))
         {
             _view.AppendLog("[done]", "result");
-            _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
+            _ = _mcp.SubmitLogAsync(result.Events, result.MarkedResult ?? result.ResultText);
             EnterIdle();
             return;
         }
@@ -380,7 +389,7 @@ public sealed class RunnerSession
         if (markerText.Contains("AGENT_COMPLETED"))
         {
             _view.AppendLog("[done]", "result");
-            _ = _mcp.SubmitLogAsync(result.Events, result.ResultText);
+            _ = _mcp.SubmitLogAsync(result.Events, result.MarkedResult ?? result.ResultText);
             CompleteWithCountdown();
             return;
         }
@@ -439,7 +448,7 @@ public sealed class RunnerSession
             _tasksCompleted++;
             _view.SetStat(StatField.Tasks, _tasksCompleted.ToString());
             _view.AppendLog("[horde] Task completed.", "result");
-            await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, _agentId, result.ResultText);
+            await _mcp.CompleteTaskAsync(_args.PoolId!, _currentTaskId!, _agentId, result.MarkedResult ?? result.ResultText);
             return HordeOutcome.Completed;
         }
 

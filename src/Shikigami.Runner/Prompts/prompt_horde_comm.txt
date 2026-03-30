@@ -12,7 +12,13 @@ TASK_FAILED: <reason>
 
 CRITICAL: Every final response MUST end with one of these markers: USER_INPUT_REQUIRED, TASK_COMPLETED, or TASK_FAILED. A response without a marker is treated as an error.
 
-## Task Completion Report
-Before the TASK_COMPLETED marker, write a brief result summary:
-- If fully done: 'Task "{title}" completed fully.' then TASK_COMPLETED
-- If done with deviations: 'Task "{title}" completed. Deviations: [desc]. Additions: [desc].' then TASK_COMPLETED
+## Result Format
+When finishing (TASK_COMPLETED), wrap your result summary in markers:
+
+AGENT_RESULT_BEGIN
+Task "{title}" completed. <brief summary of what was done, deviations, additions>
+AGENT_RESULT_END
+
+TASK_COMPLETED
+
+The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. Without these markers, the result may be lost or incomplete. Place them in the same response as your completion marker.
