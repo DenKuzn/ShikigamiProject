@@ -60,12 +60,9 @@ public static class PoolEndpoints
             var agentType = ctx.Request.Query["agent_type"].FirstOrDefault() ?? "";
             var agentId = ctx.Request.Query["agent_id"].FirstOrDefault() ?? "";
 
-            var task = poolService.GetAvailableTask(poolId, agentType);
+            var task = poolService.TryAssignTask(poolId, agentType, agentId);
             if (task != null)
             {
-                task.Status = "in_progress";
-                task.AssignedTo = agentId;
-                task.StartedAt = DateTime.UtcNow.ToString("o");
                 var remaining = pool.Tasks.Values.Count(t => t.Status == "pending");
                 return Results.Json(new { task, remaining });
             }

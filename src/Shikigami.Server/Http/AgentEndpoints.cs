@@ -166,7 +166,7 @@ public static class AgentEndpoints
 
         app.MapGet("/agents/{id}/wait", async (string id, HttpContext ctx) =>
         {
-            var timeout = int.Parse(ctx.Request.Query["timeout"].FirstOrDefault() ?? "1800");
+            var timeout = int.TryParse(ctx.Request.Query["timeout"].FirstOrDefault(), out var t) ? t : 1800;
             var elapsed = 0;
             const int interval = 2;
 

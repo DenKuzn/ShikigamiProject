@@ -12,7 +12,7 @@ public sealed class ShikigamiState
     public ConcurrentDictionary<string, AgentRecord> Agents { get; } = new();
     public ConcurrentDictionary<string, MessageQueue> Queues { get; } = new();
     public ConcurrentDictionary<string, PromptRecord> Prompts { get; } = new();
-    public ConcurrentBag<TrashEntry> Trash { get; } = new();
+    public ConcurrentQueue<TrashEntry> Trash { get; } = new();
     public ConcurrentDictionary<string, PoolRecord> Pools { get; } = new();
 
     public int HttpPort { get; set; }
@@ -68,7 +68,7 @@ public sealed class ShikigamiState
     /// </summary>
     public void ToTrash(MessageRecord msg, string recipientId, string reason)
     {
-        Trash.Add(new TrashEntry
+        Trash.Enqueue(new TrashEntry
         {
             SenderId = msg.SenderId,
             Text = msg.Text,

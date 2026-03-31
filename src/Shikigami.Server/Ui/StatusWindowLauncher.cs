@@ -10,6 +10,8 @@ namespace Shikigami.Server.Ui;
 /// </summary>
 public static class StatusWindowLauncher
 {
+    private static Dispatcher? _uiDispatcher;
+
     public static void Start(ShikigamiState state)
     {
         var settings = ServerSettings.Load();
@@ -18,6 +20,7 @@ public static class StatusWindowLauncher
         {
             try
             {
+                _uiDispatcher = Dispatcher.CurrentDispatcher;
                 var window = new StatusWindow(state, settings);
                 if (settings.ShowWindowOnStartup)
                     window.Show();
@@ -36,5 +39,20 @@ public static class StatusWindowLauncher
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
+    }
+
+    /// <summary>
+    /// Gracefully shut down the UI dispatcher so tray icon is disposed.
+    /// </summary>
+    public static void Shutdown()
+    {
+        try
+        {
+            _uiDispatcher?.InvokeShutdown();
+        }
+        catch
+        {
+            // Already shut down
+        }
     }
 }

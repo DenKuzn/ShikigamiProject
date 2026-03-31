@@ -52,6 +52,11 @@ public sealed class RunnerSession
     private int _tasksCompleted;
     private bool _userStopped;
     private bool _keepActive;
+    private volatile bool _shuttingDown;
+
+    // ── Prompt-specific ──
+    private int _promptMarkerRetries;
+    private const int MaxPromptMarkerRetries = 3;
 
     // ── Horde-specific ──
     private string? _currentTaskId;
@@ -245,12 +250,22 @@ public sealed class RunnerSession
 
     public void Shutdown()
     {
+        _shuttingDown = true;
         _view.StopHordePoll();
         _cli.Kill();
-        if (_args.TaskMode)
-            _ = _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
-        else
-            _ = _mcp.UnregisterAsync();
+
+        // Best-effort unregistration with short timeout — process is shutting down
+        try
+        {
+            var task = _args.TaskMode
+                ? _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId)
+                : _mcp.UnregisterAsync();
+            task.Wait(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+            // Process is shutting down — PidMonitor will clean up
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -297,9 +312,10 @@ public sealed class RunnerSession
         BeginCliPass();
         var result = await Task.Run(() => _cli.Run(prompt, (type, data) =>
         {
+            if (_shuttingDown) return;
             _syncContext.Send(_ => HandleCliEvent(type, data), null);
         }));
-        FinishCliPass(result);
+        if (!_shuttingDown) FinishCliPass(result);
         return result;
     }
 
@@ -369,6 +385,7 @@ public sealed class RunnerSession
 
         if (markerText.Contains("USER_INPUT_REQUIRED"))
         {
+            _promptMarkerRetries = 0;
             var marker = "USER_INPUT_REQUIRED:";
             var idx = markerText.LastIndexOf(marker);
             var question = idx >= 0
@@ -380,6 +397,7 @@ public sealed class RunnerSession
 
         if (markerText.Contains("AGENT_IDLE"))
         {
+            _promptMarkerRetries = 0;
             _view.AppendLog("[done]", "result");
             _ = _mcp.SubmitLogAsync(result.Events, result.MarkedResult ?? result.ResultText);
             EnterIdle();
@@ -388,7 +406,18 @@ public sealed class RunnerSession
 
         if (markerText.Contains("AGENT_COMPLETED"))
         {
+            _promptMarkerRetries = 0;
             _view.AppendLog("[done]", "result");
+            _ = _mcp.SubmitLogAsync(result.Events, result.MarkedResult ?? result.ResultText);
+            CompleteWithCountdown();
+            return;
+        }
+
+        _promptMarkerRetries++;
+        if (_promptMarkerRetries >= MaxPromptMarkerRetries)
+        {
+            _view.AppendLog($"[error] No completion marker after {MaxPromptMarkerRetries} retries — completing.", "error");
+            _promptMarkerRetries = 0;
             _ = _mcp.SubmitLogAsync(result.Events, result.MarkedResult ?? result.ResultText);
             CompleteWithCountdown();
             return;
@@ -472,105 +501,108 @@ public sealed class RunnerSession
 
     private async Task DispatchNextTaskAsync()
     {
-        _view.StopHordePoll();
-
-        var resp = await _mcp.RequestTaskAsync(_args.PoolId!, _args.AgentType!, _agentId);
-
-        // Pool aborted
-        if (resp?.TryGetProperty("error", out var errProp) == true
-            && errProp.GetString() == "Pool aborted")
+        while (true)
         {
-            _view.AppendLog($"[horde] Pool aborted ({_tasksCompleted} done).", "error");
-            await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
-            _state = RunnerState.Aborted;
-            _view.SetHeaderStatus("aborted", StatusColor.Red);
-            return;
-        }
+            _view.StopHordePoll();
 
-        // Got a task
-        if (resp?.TryGetProperty("task", out var taskProp) == true
-            && taskProp.ValueKind != JsonValueKind.Null)
-        {
-            var task = taskProp;
-            _currentTaskId = task.GetProperty("id").GetString();
-            var title = task.GetProperty("title").GetString();
-            var description = task.GetProperty("description").GetString();
+            var resp = await _mcp.RequestTaskAsync(_args.PoolId!, _args.AgentType!, _agentId);
 
-            _memory.BeginTask(_currentTaskId!);
-
-            _view.AppendLog($"[horde] Task: {title}", "task");
-            _iteration++;
-            _view.SetStat(StatField.Iteration, _iteration.ToString());
-            await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "working", $"Task: {title}");
-
-            _currentTaskPrompt = PromptBuilder.BuildTaskPrompt(
-                title!, description!, _mcp.Port!.Value, _agentId, _args.PoolId!, _args.LeadId);
-
-            var result = await RunCliPassAsync(_currentTaskPrompt);
-            var outcome = await EvaluateHordeResult(result);
-
-            if (outcome == HordeOutcome.UserStopped) return;
-
-            if (outcome == HordeOutcome.NoMarker && _markerRetries == 0)
+            // Pool aborted
+            if (resp?.TryGetProperty("error", out var errProp) == true
+                && errProp.GetString() == "Pool aborted")
             {
-                _markerRetries++;
-                _view.AppendLog("[horde] No completion marker — re-launching for correction...", "error");
-                _iteration++;
-                _view.SetStat(StatField.Iteration, _iteration.ToString());
-
-                var correctionPrompt = BuildHordePromptWithHistory(
-                    "You did NOT include a completion marker in your previous response. " +
-                    "You MUST end with one of:\n- TASK_COMPLETED\n- TASK_FAILED: <reason>");
-
-                var retryResult = await RunCliPassAsync(correctionPrompt);
-                var retryOutcome = await EvaluateHordeResult(retryResult);
-
-                if (retryOutcome == HordeOutcome.UserStopped) { _markerRetries = 0; return; }
-                if (retryOutcome == HordeOutcome.NoMarker)
-                {
-                    _view.AppendLog("[horde] Still no marker after correction — failing task", "error");
-                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId,
-                        "No completion marker after correction attempt");
-                }
+                _view.AppendLog($"[horde] Pool aborted ({_tasksCompleted} done).", "error");
+                await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
+                _state = RunnerState.Aborted;
+                _view.SetHeaderStatus("aborted", StatusColor.Red);
+                return;
             }
 
-            _markerRetries = 0;
-            await DispatchNextTaskAsync();
+            // Got a task
+            if (resp?.TryGetProperty("task", out var taskProp) == true
+                && taskProp.ValueKind != JsonValueKind.Null)
+            {
+                var task = taskProp;
+                _currentTaskId = task.GetProperty("id").GetString();
+                var title = task.GetProperty("title").GetString();
+                var description = task.GetProperty("description").GetString();
+
+                _memory.BeginTask(_currentTaskId!);
+
+                _view.AppendLog($"[horde] Task: {title}", "task");
+                _iteration++;
+                _view.SetStat(StatField.Iteration, _iteration.ToString());
+                await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "working", $"Task: {title}");
+
+                _currentTaskPrompt = PromptBuilder.BuildTaskPrompt(
+                    title!, description!, _mcp.Port!.Value, _agentId, _args.PoolId!, _args.LeadId);
+
+                var result = await RunCliPassAsync(_currentTaskPrompt);
+                var outcome = await EvaluateHordeResult(result);
+
+                if (outcome == HordeOutcome.UserStopped) return;
+
+                if (outcome == HordeOutcome.NoMarker && _markerRetries == 0)
+                {
+                    _markerRetries++;
+                    _view.AppendLog("[horde] No completion marker — re-launching for correction...", "error");
+                    _iteration++;
+                    _view.SetStat(StatField.Iteration, _iteration.ToString());
+
+                    var correctionPrompt = BuildHordePromptWithHistory(
+                        "You did NOT include a completion marker in your previous response. " +
+                        "You MUST end with one of:\n- TASK_COMPLETED\n- TASK_FAILED: <reason>");
+
+                    var retryResult = await RunCliPassAsync(correctionPrompt);
+                    var retryOutcome = await EvaluateHordeResult(retryResult);
+
+                    if (retryOutcome == HordeOutcome.UserStopped) { _markerRetries = 0; return; }
+                    if (retryOutcome == HordeOutcome.NoMarker)
+                    {
+                        _view.AppendLog("[horde] Still no marker after correction — failing task", "error");
+                        await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId,
+                            "No completion marker after correction attempt");
+                    }
+                }
+
+                _markerRetries = 0;
+                continue; // next task iteration
+            }
+
+            // All done
+            if (resp?.TryGetProperty("all_done", out var ad) == true && ad.GetBoolean())
+            {
+                _view.AppendLog($"[horde] All tasks done ({_tasksCompleted} completed).", "sys");
+                await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
+                CompleteWithCountdown();
+                return;
+            }
+
+            // Blocked — check if our agent_type has pending tasks
+            var blockedTypes = new List<string>();
+            if (resp?.TryGetProperty("blocked_agent_types", out var btProp) == true
+                && btProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var bt in btProp.EnumerateArray())
+                    blockedTypes.Add(bt.GetString() ?? "");
+            }
+
+            if (blockedTypes.Contains(_args.AgentType!))
+            {
+                var blockedCount = resp?.TryGetProperty("blocked_count", out var bc) == true ? bc.GetInt32() : 0;
+                _view.AppendLog($"[horde] Waiting ({blockedCount} blocked)...", "sys");
+                _state = RunnerState.HordeWaiting;
+                _view.SetHeaderStatus($"waiting ({blockedCount} blocked)", StatusColor.Amber);
+                await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "idle", "Waiting for tasks");
+                _view.ScheduleHordePoll();
+            }
+            else
+            {
+                _view.AppendLog($"[horde] No more tasks for {_args.AgentType} ({_tasksCompleted} done).", "sys");
+                await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
+                CompleteWithCountdown();
+            }
             return;
-        }
-
-        // All done
-        if (resp?.TryGetProperty("all_done", out var ad) == true && ad.GetBoolean())
-        {
-            _view.AppendLog($"[horde] All tasks done ({_tasksCompleted} completed).", "sys");
-            await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
-            CompleteWithCountdown();
-            return;
-        }
-
-        // Blocked — check if our agent_type has pending tasks
-        var blockedTypes = new List<string>();
-        if (resp?.TryGetProperty("blocked_agent_types", out var btProp) == true
-            && btProp.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var bt in btProp.EnumerateArray())
-                blockedTypes.Add(bt.GetString() ?? "");
-        }
-
-        if (blockedTypes.Contains(_args.AgentType!))
-        {
-            var blockedCount = resp?.TryGetProperty("blocked_count", out var bc) == true ? bc.GetInt32() : 0;
-            _view.AppendLog($"[horde] Waiting ({blockedCount} blocked)...", "sys");
-            _state = RunnerState.HordeWaiting;
-            _view.SetHeaderStatus($"waiting ({blockedCount} blocked)", StatusColor.Amber);
-            await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "idle", "Waiting for tasks");
-            _view.ScheduleHordePoll();
-        }
-        else
-        {
-            _view.AppendLog($"[horde] No more tasks for {_args.AgentType} ({_tasksCompleted} done).", "sys");
-            await _mcp.PoolUnregisterAsync(_args.PoolId!, _agentId);
-            CompleteWithCountdown();
         }
     }
 
@@ -595,6 +627,7 @@ public sealed class RunnerSession
                 "No completion marker after user correction");
         }
 
+        // Continue dispatching next tasks (non-recursive)
         await DispatchNextTaskAsync();
     }
 

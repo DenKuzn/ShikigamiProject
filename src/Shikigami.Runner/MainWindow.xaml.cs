@@ -22,6 +22,7 @@ public partial class MainWindow : Window, IRunnerView
     private DispatcherTimer? _closeTimer;
     private bool _dotOn;
     private bool _autoScroll = true;
+    private bool _polling;
     private double _logFontSize = 12;
     private readonly List<TextBlock> _collapsibleTextBlocks = new();
     private int _closeCountdown;
@@ -55,9 +56,15 @@ public partial class MainWindow : Window, IRunnerView
         };
         _dotTimer.Start();
 
-        // MCP message polling
+        // MCP message polling (guard against overlapping ticks)
         _mcpPollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _mcpPollTimer.Tick += async (_, _) => await _session.PollMessagesAsync();
+        _mcpPollTimer.Tick += async (_, _) =>
+        {
+            if (_polling) return;
+            _polling = true;
+            try { await _session.PollMessagesAsync(); }
+            finally { _polling = false; }
+        };
         _mcpPollTimer.Start();
 
         LogScroller.PreviewMouseWheel += OnLogMouseWheel;

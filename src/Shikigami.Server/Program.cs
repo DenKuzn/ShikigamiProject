@@ -67,6 +67,7 @@ try
 finally
 {
     cts.Cancel();
+    StatusWindowLauncher.Shutdown();
     await httpApp.StopAsync();
     Console.Error.WriteLine("[shikigami-mcp] Server stopped");
 }

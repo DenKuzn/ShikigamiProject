@@ -7,7 +7,6 @@ namespace Shikigami.Core.Services;
 /// </summary>
 public sealed class IdGenerator
 {
-    private static readonly Random Rng = new();
     private static readonly char[] Chars = "abcdefghijklmnopqrstuvwxyz0123456789".ToCharArray();
     private readonly ShikigamiState _state;
 
@@ -40,7 +39,7 @@ public sealed class IdGenerator
     {
         var buf = new char[length];
         for (var i = 0; i < length; i++)
-            buf[i] = Chars[Rng.Next(Chars.Length)];
+            buf[i] = Chars[Random.Shared.Next(Chars.Length)];
         return new string(buf);
     }
 }

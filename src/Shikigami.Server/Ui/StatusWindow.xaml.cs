@@ -68,6 +68,13 @@ public partial class StatusWindow : Window
             HideToTray();
         };
 
+        // Clean up tray icon when the dispatcher shuts down
+        Dispatcher.ShutdownStarted += (_, _) =>
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+        };
+
         Refresh();
     }
 

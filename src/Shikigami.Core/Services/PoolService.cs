@@ -104,19 +104,27 @@ public sealed class PoolService
     }
 
     /// <summary>
-    /// Find the first available task for a given agent type.
+    /// Atomically find and assign the first available task for a given agent type.
+    /// Returns the assigned task, or null if none available.
     /// </summary>
-    public TaskRecord? GetAvailableTask(string poolId, string agentType)
+    public TaskRecord? TryAssignTask(string poolId, string agentType, string agentId)
     {
         if (!_state.Pools.TryGetValue(poolId, out var pool)) return null;
 
-        foreach (var taskId in pool.TaskOrder)
+        lock (pool.TaskOrder)
         {
-            var task = pool.Tasks[taskId];
-            if (task.Status != "pending") continue;
-            if (task.AgentType != agentType) continue;
-            if (!task.DependsOn.All(depId => pool.Tasks[depId].Status == "completed")) continue;
-            return task;
+            foreach (var taskId in pool.TaskOrder)
+            {
+                var task = pool.Tasks[taskId];
+                if (task.Status != "pending") continue;
+                if (task.AgentType != agentType) continue;
+                if (!task.DependsOn.All(depId => pool.Tasks[depId].Status == "completed")) continue;
+
+                task.Status = "in_progress";
+                task.AssignedTo = agentId;
+                task.StartedAt = DateTime.UtcNow.ToString("o");
+                return task;
+            }
         }
         return null;
     }

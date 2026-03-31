@@ -126,7 +126,7 @@ public sealed class ShikigamiMcpTools
     public string GetTrash(int last_n = 50)
     {
         var items = _state.Trash.ToArray();
-        var result = items.TakeLast(last_n).Reverse().ToList();
+        var result = items.Skip(Math.Max(0, items.Length - last_n)).Reverse().ToList();
         return JsonSerializer.Serialize(result);
     }
 
