@@ -4,20 +4,16 @@ using System.Text.Json;
 namespace Shikigami.Runner.Services;
 
 /// <summary>
-/// Orchestrates a single shikigami's lifecycle: launch CLI, evaluate results,
-/// manage state transitions, handle messages.
+/// Orchestrates a single shikigami's lifecycle using a persistent CLI session.
 ///
-/// Secret: the state machine (RunnerState), mode-specific logic (prompt vs horde),
-/// marker evaluation, retry strategy, prompt assembly.
+/// The CLI process stays alive between messages — context is maintained internally
+/// by the Claude Code harness. No more prompt rebuilding or history injection.
 ///
-/// Exposes: commands that the UI can trigger (user input, stop, keep-active toggle).
+/// Flow: Start() → CLI alive → SendMessage()* → Close()/Kill()
+/// Crash recovery: Kill() → Restart(resume) → SendMessage("continue")
 /// </summary>
 public sealed class RunnerSession
 {
-    /// <summary>
-    /// Explicit state machine replacing 7 implicit booleans.
-    /// Every state is mutually exclusive — no invalid combinations possible.
-    /// </summary>
     private enum RunnerState
     {
         Starting,
@@ -37,7 +33,7 @@ public sealed class RunnerSession
     private readonly AppArgs _args;
     private readonly IRunnerView _view;
     private readonly McpHttpClient _mcp;
-    private readonly CliRunner _cli;
+    private readonly CliSession _cli;
     private readonly SynchronizationContext _syncContext;
     private readonly ShikigamiContextMemory _memory = new();
     private readonly string _agentId;
@@ -46,7 +42,7 @@ public sealed class RunnerSession
     private PromptBuilder? _promptBuilder;
     private string? _originalPrompt;
     private RunnerState _state = RunnerState.Starting;
-    private int _iteration;
+    private int _turn;
     private int _toolCount;
     private double _totalCost;
     private int _tasksCompleted;
@@ -60,13 +56,9 @@ public sealed class RunnerSession
 
     // ── Horde-specific ──
     private string? _currentTaskId;
-    private string? _currentTaskPrompt;
+    private bool _hordeInitialPromptSent;
     private int _markerRetries;
 
-    /// <summary>
-    /// Dot color hint for the view's pulse animation.
-    /// Derived from state — does not expose the state itself.
-    /// </summary>
     public StatusColor DotColor => _state switch
     {
         RunnerState.WaitingInputQuestion or RunnerState.WaitingInputStop => StatusColor.Amber,
@@ -79,7 +71,7 @@ public sealed class RunnerSession
         _args = args;
         _view = view;
         _mcp = new McpHttpClient(args.McpPort);
-        _cli = new CliRunner(args.Agent, args.Model, args.Tools, args.Workdir, args.Effort);
+        _cli = new CliSession(args.Agent, args.Model, args.Tools, args.Workdir, args.Effort);
         _syncContext = SynchronizationContext.Current
             ?? throw new InvalidOperationException("RunnerSession must be created on the UI thread");
         _agentId = args.AgentId ?? args.PromptId ?? "";
@@ -95,6 +87,10 @@ public sealed class RunnerSession
     public async Task StartAsync()
     {
         await _mcp.ValidatePortAsync();
+
+        // Launch the persistent CLI process
+        _cli.Start();
+        _view.AppendLog($"[session] CLI started (session={_cli.SessionId[..8]}...)", "sys");
 
         if (_args.TaskMode)
         {
@@ -125,7 +121,8 @@ public sealed class RunnerSession
                 Process.GetCurrentProcess().Id,
                 _args.LeadId);
 
-            var fullPrompt = _promptBuilder.FullPromptDisplay();
+            // Display prompt in log
+            var fullPrompt = _promptBuilder.BuildInitialPrompt();
             var taskMarker = "\n## Your task:";
             var taskIdx = fullPrompt.IndexOf(taskMarker);
             if (taskIdx >= 0)
@@ -137,7 +134,10 @@ public sealed class RunnerSession
             {
                 _view.AppendCollapsible("[Base Shikigami Prompt]", fullPrompt, "prompt", "prompt");
             }
-            await LaunchPassAsync();
+
+            // Send initial prompt as first message
+            var result = await SendMessageAsync(fullPrompt);
+            await EvaluatePromptResult(result);
         }
     }
 
@@ -159,12 +159,35 @@ public sealed class RunnerSession
         else
             _memory.AddUserInput(text);
 
+        if (isStop)
+        {
+            // After stop, CLI was killed — restart with resume to restore context
+            _cli.Restart(resume: true);
+            _view.AppendLog("[session] Resumed after stop", "sys");
+        }
+
         if (_args.TaskMode)
-            await RelaunchHordeTaskAsync(isStop
-                ? $"\n\nUser stopped you and instructed:\n{text}\n\nApply the correction and complete the task."
-                : $"\n\nUser answered:\n{text}\n\nContinue the task.");
+        {
+            var message = isStop
+                ? $"User stopped you and instructed:\n{text}\n\nApply the correction and complete the task."
+                : $"User answered:\n{text}\n\nContinue the task.";
+            var result = await SendMessageAsync(message);
+            var outcome = await EvaluateHordeResult(result);
+            if (outcome == HordeOutcome.UserStopped) return;
+            if (outcome == HordeOutcome.NoMarker)
+            {
+                _view.AppendLog("[horde] No completion marker — failing task", "error");
+                await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId,
+                    "No completion marker after user input");
+            }
+            await DispatchNextTaskAsync();
+        }
         else
-            await LaunchPassAsync();
+        {
+            // Just send the text — CLI has full context
+            var result = await SendMessageAsync(text);
+            await EvaluatePromptResult(result);
+        }
     }
 
     public void OnStopClicked()
@@ -189,8 +212,6 @@ public sealed class RunnerSession
 
     public async Task PollMessagesAsync()
     {
-        // Only poll when agent is idle/waiting — while CLI is running, the agent
-        // checks messages itself via MCP tools. Consuming here would steal them.
         if (!_mcp.Active) return;
         if (_state is not (RunnerState.Idle or RunnerState.WaitingInputQuestion
                        or RunnerState.WaitingInputStop or RunnerState.HordeWaiting)) return;
@@ -233,11 +254,23 @@ public sealed class RunnerSession
             }
             else if (_args.TaskMode)
             {
-                await RelaunchHordeTaskAsync($"\n\nMessage received:\n{combined}\n\nContinue the task.");
+                var result = await SendMessageAsync($"Message received:\n{combined}\n\nContinue the task.");
+                var outcome = await EvaluateHordeResult(result);
+                if (outcome == HordeOutcome.UserStopped) return;
+                if (outcome == HordeOutcome.NoMarker)
+                {
+                    _view.AppendLog("[horde] No completion marker — failing task", "error");
+                    await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId,
+                        "No completion marker after message");
+                }
+                await DispatchNextTaskAsync();
             }
             else
             {
-                await LaunchPassAsync();
+                // Prompt mode — just send the message text in existing session
+                EnsureCliAlive();
+                var result = await SendMessageAsync(combined);
+                await EvaluatePromptResult(result);
             }
         }
         catch { /* polling failure is not critical */ }
@@ -252,9 +285,8 @@ public sealed class RunnerSession
     {
         _shuttingDown = true;
         _view.StopHordePoll();
-        _cli.Kill();
+        _cli.Close();
 
-        // Best-effort unregistration with short timeout — process is shutting down
         try
         {
             var task = _args.TaskMode
@@ -262,17 +294,14 @@ public sealed class RunnerSession
                 : _mcp.UnregisterAsync();
             task.Wait(TimeSpan.FromSeconds(2));
         }
-        catch
-        {
-            // Process is shutting down — PidMonitor will clean up
-        }
+        catch { }
     }
 
     // ════════════════════════════════════════════════════════════════
-    //  CLI pass helpers
+    //  CLI message helpers
     // ════════════════════════════════════════════════════════════════
 
-    private void BeginCliPass()
+    private void BeginCliTurn()
     {
         _state = RunnerState.Working;
         _userStopped = false;
@@ -280,13 +309,13 @@ public sealed class RunnerSession
         _view.SetStopButton(true, 1.0);
     }
 
-    private void FinishCliPass(RunResult result)
+    private void FinishCliTurn(RunResult result)
     {
-        _memory.FlushEvents(result.Events, _iteration);
+        _memory.FlushEvents(result.Events, _turn);
 
         if (result.Cost.HasValue)
         {
-            _totalCost += result.Cost.Value;
+            _totalCost = result.Cost.Value; // Persistent session: cost is cumulative from CLI
             _view.SetStat(StatField.Cost, $"${_totalCost:F4}");
             _ = _mcp.SubmitCostAsync(_totalCost);
         }
@@ -307,16 +336,48 @@ public sealed class RunnerSession
         _view.SetStopButton(false, 0.25);
     }
 
-    private async Task<RunResult> RunCliPassAsync(string prompt)
+    /// <summary>
+    /// Send a message in the persistent CLI session. The process stays alive after.
+    /// If the process died, attempts crash recovery with --resume.
+    /// </summary>
+    private async Task<RunResult> SendMessageAsync(string content)
     {
-        BeginCliPass();
-        var result = await Task.Run(() => _cli.Run(prompt, (type, data) =>
+        EnsureCliAlive();
+
+        _turn++;
+        _view.SetStat(StatField.Iteration, _turn.ToString());
+
+        BeginCliTurn();
+        var result = await Task.Run(() => _cli.SendMessage(content, (type, data) =>
         {
             if (_shuttingDown) return;
             _syncContext.Send(_ => HandleCliEvent(type, data), null);
         }));
-        if (!_shuttingDown) FinishCliPass(result);
+
+        if (_shuttingDown) return result;
+
+        // Check if process died during this turn
+        if (result.Error != null && !_userStopped && !_cli.IsAlive)
+        {
+            _view.AppendLog($"[session] CLI crashed: {result.Error}", "error");
+        }
+
+        FinishCliTurn(result);
         return result;
+    }
+
+    /// <summary>
+    /// If CLI process died unexpectedly, restart with --resume.
+    /// </summary>
+    private void EnsureCliAlive()
+    {
+        if (_cli.IsAlive) return;
+        var stderr = _cli.LastStderr;
+        _view.AppendLog("[session] CLI not alive — restarting with resume...", "error");
+        if (!string.IsNullOrEmpty(stderr))
+            _view.AppendLog($"[stderr] {stderr}", "error");
+        _cli.Restart(resume: true);
+        _view.AppendLog("[session] Resumed", "sys");
     }
 
     private void HandleCliEvent(string type, Dictionary<string, object> data)
@@ -362,18 +423,8 @@ public sealed class RunnerSession
     //  Prompt mode
     // ════════════════════════════════════════════════════════════════
 
-    private async Task LaunchPassAsync()
+    private async Task EvaluatePromptResult(RunResult result)
     {
-        if (_promptBuilder == null) return;
-        if (_state == RunnerState.Idle) ExitIdle();
-
-        _iteration++;
-        _view.SetStat(StatField.Iteration, _iteration.ToString());
-        await _mcp.UpdateStateAsync("working", $"Iteration {_iteration}");
-
-        var builtPrompt = _promptBuilder.Build(_iteration, _iteration > 1 ? _memory.ToJson() : null);
-        var result = await RunCliPassAsync(builtPrompt);
-
         if (_userStopped)
         {
             _userStopped = false;
@@ -413,6 +464,7 @@ public sealed class RunnerSession
             return;
         }
 
+        // No marker — send correction in same session (no relaunch needed!)
         _promptMarkerRetries++;
         if (_promptMarkerRetries >= MaxPromptMarkerRetries)
         {
@@ -423,8 +475,13 @@ public sealed class RunnerSession
             return;
         }
 
-        _view.AppendLog("[warn] No completion marker — re-launching for correction...", "error");
-        await LaunchPassAsync();
+        _view.AppendLog("[warn] No completion marker — sending correction...", "error");
+        var correction = await SendMessageAsync(
+            "You did NOT include a completion marker. You MUST end with one of:\n" +
+            "- USER_INPUT_REQUIRED: <question>\n" +
+            "- AGENT_IDLE\n" +
+            "- AGENT_COMPLETED");
+        await EvaluatePromptResult(correction);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -484,21 +541,6 @@ public sealed class RunnerSession
         return HordeOutcome.NoMarker;
     }
 
-    private string BuildHordePromptWithHistory(string? suffix = null)
-    {
-        var parts = new List<string> { _currentTaskPrompt! };
-        var historyJson = _memory.CurrentTaskJson();
-        if (!string.IsNullOrEmpty(historyJson))
-        {
-            parts.Add($"## Full History (current task)\n```json\n{historyJson}\n```");
-            parts.Add("Continue from where you left off. " +
-                       "Do NOT re-read files you already have in history.");
-        }
-        if (!string.IsNullOrEmpty(suffix))
-            parts.Add(suffix.TrimStart('\n'));
-        return string.Join("\n\n", parts);
-    }
-
     private async Task DispatchNextTaskAsync()
     {
         while (true)
@@ -528,16 +570,25 @@ public sealed class RunnerSession
                 var description = task.GetProperty("description").GetString();
 
                 _memory.BeginTask(_currentTaskId!);
-
                 _view.AppendLog($"[horde] Task: {title}", "task");
-                _iteration++;
-                _view.SetStat(StatField.Iteration, _iteration.ToString());
                 await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "working", $"Task: {title}");
 
-                _currentTaskPrompt = PromptBuilder.BuildTaskPrompt(
-                    title!, description!, _mcp.Port!.Value, _agentId, _args.PoolId!, _args.LeadId);
+                // First task: send full prompt (MCP header + comm + task)
+                // Subsequent tasks: just the task description (agent already knows the rules)
+                string taskMessage;
+                if (!_hordeInitialPromptSent)
+                {
+                    taskMessage = PromptBuilder.BuildTaskPrompt(
+                        title!, description!, _mcp.Port!.Value, _agentId, _args.PoolId!, _args.LeadId);
+                    _hordeInitialPromptSent = true;
+                }
+                else
+                {
+                    taskMessage = $"## New Task: {title}\n\n{description}\n\n" +
+                                  "Previous task is complete. Focus on this new task now.";
+                }
 
-                var result = await RunCliPassAsync(_currentTaskPrompt);
+                var result = await SendMessageAsync(taskMessage);
                 var outcome = await EvaluateHordeResult(result);
 
                 if (outcome == HordeOutcome.UserStopped) return;
@@ -545,16 +596,13 @@ public sealed class RunnerSession
                 if (outcome == HordeOutcome.NoMarker && _markerRetries == 0)
                 {
                     _markerRetries++;
-                    _view.AppendLog("[horde] No completion marker — re-launching for correction...", "error");
-                    _iteration++;
-                    _view.SetStat(StatField.Iteration, _iteration.ToString());
+                    _view.AppendLog("[horde] No completion marker — sending correction...", "error");
 
-                    var correctionPrompt = BuildHordePromptWithHistory(
+                    // Send correction in same session — no relaunch!
+                    var correctionResult = await SendMessageAsync(
                         "You did NOT include a completion marker in your previous response. " +
                         "You MUST end with one of:\n- TASK_COMPLETED\n- TASK_FAILED: <reason>");
-
-                    var retryResult = await RunCliPassAsync(correctionPrompt);
-                    var retryOutcome = await EvaluateHordeResult(retryResult);
+                    var retryOutcome = await EvaluateHordeResult(correctionResult);
 
                     if (retryOutcome == HordeOutcome.UserStopped) { _markerRetries = 0; return; }
                     if (retryOutcome == HordeOutcome.NoMarker)
@@ -566,7 +614,7 @@ public sealed class RunnerSession
                 }
 
                 _markerRetries = 0;
-                continue; // next task iteration
+                continue;
             }
 
             // All done
@@ -578,7 +626,7 @@ public sealed class RunnerSession
                 return;
             }
 
-            // Blocked — check if our agent_type has pending tasks
+            // Blocked
             var blockedTypes = new List<string>();
             if (resp?.TryGetProperty("blocked_agent_types", out var btProp) == true
                 && btProp.ValueKind == JsonValueKind.Array)
@@ -604,31 +652,6 @@ public sealed class RunnerSession
             }
             return;
         }
-    }
-
-    private async Task RelaunchHordeTaskAsync(string suffix)
-    {
-        if (_currentTaskPrompt == null) return;
-
-        _iteration++;
-        _view.SetStat(StatField.Iteration, _iteration.ToString());
-        await _mcp.PoolUpdateStateAsync(_args.PoolId!, _agentId, "working", "Continuing task");
-
-        var prompt = BuildHordePromptWithHistory(suffix);
-        var result = await RunCliPassAsync(prompt);
-        var outcome = await EvaluateHordeResult(result);
-
-        if (outcome == HordeOutcome.UserStopped) return;
-
-        if (outcome == HordeOutcome.NoMarker)
-        {
-            _view.AppendLog("[horde] No completion marker — failing task", "error");
-            await _mcp.FailTaskAsync(_args.PoolId!, _currentTaskId!, _agentId,
-                "No completion marker after user correction");
-        }
-
-        // Continue dispatching next tasks (non-recursive)
-        await DispatchNextTaskAsync();
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -711,10 +734,6 @@ public sealed class RunnerSession
     //  Helpers
     // ════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Returns the best text to check for markers.
-    /// Prefers ResultText (from result event), falls back to the last text block from streaming.
-    /// </summary>
     private static string GetMarkerText(RunResult result) =>
         !string.IsNullOrEmpty(result.ResultText) ? result.ResultText : result.LastTextBlock;
 

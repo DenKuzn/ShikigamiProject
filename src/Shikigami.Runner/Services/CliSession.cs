@@ -1,90 +1,87 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Text.Json;
 
 namespace Shikigami.Runner.Services;
 
 /// <summary>
-/// Result of a single Claude CLI pass.
+/// Persistent Claude CLI session using --input-format stream-json.
+///
+/// Lifecycle: Start() → SendMessage()* → Close()/Kill()
+///
+/// Unlike CliRunner which launched a new process per message,
+/// CliSession keeps one process alive and sends messages via stdin NDJSON.
+/// Context is maintained by the CLI harness internally.
+///
+/// Crash recovery: Kill() → Restart(resume: true) → SendMessage("continue")
+/// Resume uses --resume {sessionId} to restore full conversation context.
 /// </summary>
-public sealed class RunResult
-{
-    public string ResultText { get; set; } = "";
-    public string LastTextBlock { get; set; } = "";
-    public string? MarkedResult { get; set; }
-    public int ToolsUsed { get; set; }
-    public double? Cost { get; set; }
-    public List<Dictionary<string, object>> Events { get; set; } = new();
-    public string? Error { get; set; }
-    public int ContextWindow { get; set; }
-    public int InputTokens { get; set; }
-    public int OutputTokens { get; set; }
-}
-
-/// <summary>
-/// Launches claude CLI as a subprocess, feeds it a prompt, and parses stream-json events.
-/// Equivalent to Python cli_runner.py.
-/// </summary>
-public sealed class CliRunner
+public sealed class CliSession : IDisposable
 {
     private readonly string? _agent;
     private readonly string? _model;
     private readonly string? _tools;
     private readonly string? _workdir;
     private readonly string? _effort;
-    private Process? _proc;
+    private readonly string _sessionId;
 
-    public CliRunner(string? agent = null, string? model = null, string? tools = null,
-                     string? workdir = null, string? effort = null)
+    private Process? _proc;
+    private bool _resumeMode;
+    private bool _disposed;
+    private readonly StringBuilder _stderr = new();
+
+    /// <summary>
+    /// Max time to wait for a single stdout line before declaring the process hung.
+    /// Generous because tool execution (builds, searches) can take minutes.
+    /// </summary>
+    private static readonly TimeSpan ReadLineTimeout = TimeSpan.FromMinutes(10);
+
+    public CliSession(string? agent = null, string? model = null, string? tools = null,
+                      string? workdir = null, string? effort = null, string? sessionId = null)
     {
         _agent = agent;
         _model = model;
         _tools = tools;
         _workdir = workdir;
         _effort = effort;
+        _sessionId = sessionId ?? Guid.NewGuid().ToString();
     }
 
-    /// <summary>
-    /// Kill the running CLI process tree.
-    /// </summary>
-    public void Kill()
-    {
-        var proc = _proc;
-        if (proc == null || proc.HasExited) return;
+    /// <summary>UUID used for --session-id / --resume.</summary>
+    public string SessionId => _sessionId;
 
-        try
-        {
-            // taskkill /T kills the whole process tree on Windows
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "taskkill",
-                Arguments = $"/T /F /PID {proc.Id}",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            })?.WaitForExit(5000);
-        }
-        catch
-        {
-            try { proc.Kill(entireProcessTree: true); } catch { }
-        }
-    }
+    /// <summary>True if the CLI process is running.</summary>
+    public bool IsAlive => _proc is { HasExited: false };
+
+    // ════════════════════════════════════════════════════════════════
+    //  Lifecycle
+    // ════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Run a single CLI pass. Calls onEvent for each parsed stream-json event.
+    /// Launch the claude CLI process. Does NOT send any message —
+    /// the process waits for the first stdin NDJSON line.
     /// </summary>
-    public RunResult Run(string prompt, Action<string, Dictionary<string, object>>? onEvent = null)
+    public void Start()
     {
-        var emit = onEvent ?? ((_, _) => { });
-        var result = new RunResult();
+        if (_proc is { HasExited: false })
+            throw new InvalidOperationException("Session already running");
 
         var claudeBin = FindClaude();
         var args = new List<string>
         {
-            "-p", "--verbose",
-            "--no-session-persistence",
+            "-p",
+            "--input-format", "stream-json",
             "--output-format", "stream-json",
+            "--verbose",
             "--strict-mcp-config",
         };
+
+        if (_resumeMode)
+            args.AddRange(["--resume", _sessionId]);
+        else
+            args.AddRange(["--session-id", _sessionId]);
+
         if (!string.IsNullOrEmpty(_agent))
             args.AddRange(["--agent", _agent]);
         else if (!string.IsNullOrEmpty(_model))
@@ -94,54 +91,111 @@ public sealed class CliRunner
         if (!string.IsNullOrEmpty(_effort))
             args.AddRange(["--effort", _effort]);
 
-        var cmdLine = $"{claudeBin} {string.Join(" ", args)}";
-        emit("command", new() { ["cmd"] = cmdLine });
-
-        try
+        var psi = new ProcessStartInfo
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = claudeBin,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardInputEncoding = System.Text.Encoding.UTF8,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-                StandardErrorEncoding = System.Text.Encoding.UTF8,
-            };
-            foreach (var arg in args) psi.ArgumentList.Add(arg);
-            if (!string.IsNullOrEmpty(_workdir)) psi.WorkingDirectory = _workdir;
+            FileName = claudeBin,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(false),
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var arg in args) psi.ArgumentList.Add(arg);
+        if (!string.IsNullOrEmpty(_workdir)) psi.WorkingDirectory = _workdir;
 
-            // Clean env
-            foreach (var key in new[] { "CLAUDECODE", "CLAUDE_CODE_SSE_PORT",
-                         "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_MAX_OUTPUT_TOKENS" })
-                psi.Environment.Remove(key);
+        // Clean env — prevent interference from parent Claude Code process
+        foreach (var key in new[] { "CLAUDECODE", "CLAUDE_CODE_SSE_PORT",
+                     "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_MAX_OUTPUT_TOKENS" })
+            psi.Environment.Remove(key);
 
-            _proc = Process.Start(psi);
-            if (_proc == null)
-            {
-                result.Error = "Failed to start claude process";
-                return result;
-            }
+        _stderr.Clear();
+        _proc = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start claude process");
 
-            _proc.StandardInput.Write(prompt);
-            _proc.StandardInput.Close();
-        }
-        catch (Exception e)
+        // Capture stderr asynchronously for diagnostics
+        _proc.ErrorDataReceived += (_, e) =>
         {
-            result.Error = $"'claude' CLI not found or failed to start: {e.Message}";
-            emit("error", new() { ["message"] = result.Error });
-            return result;
-        }
+            if (e.Data != null) _stderr.AppendLine(e.Data);
+        };
+        _proc.BeginErrorReadLine();
+    }
 
+    /// <summary>Last captured stderr output (for diagnostics after crash).</summary>
+    public string LastStderr => _stderr.ToString();
+
+    // ════════════════════════════════════════════════════════════════
+    //  Messaging
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Send a user message and block until the turn completes (result event).
+    /// The process stays alive after this — call SendMessage again for the next turn.
+    /// </summary>
+    public RunResult SendMessage(string content, Action<string, Dictionary<string, object>>? onEvent = null)
+    {
+        if (_proc == null || _proc.HasExited)
+            throw new InvalidOperationException("Session not running. Call Start() first or Restart().");
+
+        var emit = onEvent ?? ((_, _) => { });
+        var result = new RunResult();
+
+        // Build NDJSON user message
+        var msg = JsonSerializer.Serialize(new
+        {
+            type = "user",
+            message = new { role = "user", content }
+        });
+
+        // Write as raw UTF-8 bytes to avoid encoding issues with Cyrillic
+        var bytes = Encoding.UTF8.GetBytes(msg + "\n");
+        _proc.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+        _proc.StandardInput.BaseStream.Flush();
+
+        // Read events until "result" type signals turn completion
         var toolN = 0;
         var textBlocks = new List<string>();
+
         while (true)
         {
-            var line = _proc.StandardOutput.ReadLine();
-            if (line == null) break;
+            // Async read with timeout — protects against CLI hang (bug #25629)
+            string? line;
+            try
+            {
+                var readTask = _proc.StandardOutput.ReadLineAsync();
+                if (readTask.Wait(ReadLineTimeout))
+                {
+                    line = readTask.Result;
+                }
+                else
+                {
+                    // Timeout — process is hung
+                    result.Error = $"CLI process hung (no output for {ReadLineTimeout.TotalMinutes:F0} min)";
+                    emit("error", new() { ["message"] = result.Error });
+                    Kill();
+                    break;
+                }
+            }
+            catch
+            {
+                line = null;
+            }
+
+            if (line == null)
+            {
+                // EOF — process died mid-turn
+                var exitCode = _proc.HasExited ? _proc.ExitCode : -1;
+                var stderrText = _stderr.ToString().Trim();
+                var detail = $"CLI process exited unexpectedly (exit={exitCode})";
+                if (!string.IsNullOrEmpty(stderrText))
+                    detail += $"\nstderr: {stderrText}";
+                result.Error = detail;
+                emit("error", new() { ["message"] = result.Error });
+                break;
+            }
+
             line = line.Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
@@ -161,13 +215,13 @@ public sealed class CliRunner
                     break;
 
                 case "assistant":
-                    if (evt.TryGetProperty("message", out var msg))
+                    if (evt.TryGetProperty("message", out var aMsg))
                     {
                         try
                         {
-                            if (msg.TryGetProperty("content", out var content))
+                            if (aMsg.TryGetProperty("content", out var content2))
                             {
-                                foreach (var blk in content.EnumerateArray())
+                                foreach (var blk in content2.EnumerateArray())
                                 {
                                     var blkType = blk.TryGetProperty("type", out var bt) ? bt.GetString() : null;
                                     switch (blkType)
@@ -209,7 +263,7 @@ public sealed class CliRunner
                         }
                         catch { /* content processing must not block usage extraction */ }
 
-                        if (msg.TryGetProperty("usage", out var usage))
+                        if (aMsg.TryGetProperty("usage", out var usage))
                         {
                             var inp = (usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0)
                                     + (usage.TryGetProperty("cache_creation_input_tokens", out var cc) ? cc.GetInt32() : 0)
@@ -217,12 +271,16 @@ public sealed class CliRunner
                             var outp = usage.TryGetProperty("output_tokens", out var ot) ? ot.GetInt32() : 0;
                             result.InputTokens = inp;
                             result.OutputTokens = outp;
-                            emit("usage", new() { ["input_tokens"] = inp, ["output_tokens"] = outp });
+
+                            var cacheRead = usage.TryGetProperty("cache_read_input_tokens", out var crv) ? crv.GetInt32() : 0;
+                            emit("usage", new() { ["input_tokens"] = inp, ["output_tokens"] = outp, ["cache_read"] = cacheRead });
                         }
                     }
                     break;
 
                 case "user":
+                    // Tool results — the CLI feeds tool output back internally.
+                    // We observe these for event log but don't need to act on them.
                     if (evt.TryGetProperty("message", out var userMsg)
                         && userMsg.TryGetProperty("content", out var userContent))
                     {
@@ -250,7 +308,6 @@ public sealed class CliRunner
                             if (md.TryGetProperty("contextWindow", out var cw))
                                 result.ContextWindow = cw.GetInt32();
 
-                            // Extract tokens from modelUsage (camelCase) as fallback
                             if (result.InputTokens == 0)
                             {
                                 var muInp = (md.TryGetProperty("inputTokens", out var mi) ? mi.GetInt32() : 0)
@@ -272,19 +329,94 @@ public sealed class CliRunner
                         ["input_tokens"] = result.InputTokens,
                         ["output_tokens"] = result.OutputTokens,
                     });
+
+                    // DO NOT WaitForExit — process stays alive for next message
+                    break;
+
+                case "rate_limit_event":
+                    // Informational — no action needed
                     break;
             }
+
+            // Break out of read loop when result received
+            if (etype == "result") break;
         }
 
-        _proc.WaitForExit();
-        _proc = null;
-
-        // Fallback: if streaming didn't catch markers (e.g. split across blocks without AGENT_RESULT_END trigger)
+        // Fallback marker extraction
         if (result.MarkedResult == null)
             result.MarkedResult = ExtractMarkedResult(string.Join("\n", textBlocks));
 
         return result;
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Control
+    // ════════════════════════════════════════════════════════════════
+
+    /// <summary>Kill the CLI process tree (stop button).</summary>
+    public void Kill()
+    {
+        var proc = _proc;
+        if (proc == null || proc.HasExited) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "taskkill",
+                Arguments = $"/T /F /PID {proc.Id}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            })?.WaitForExit(5000);
+        }
+        catch
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+        }
+    }
+
+    /// <summary>Close stdin gracefully. Process should exit on its own.</summary>
+    public void Close()
+    {
+        var proc = _proc;
+        if (proc == null || proc.HasExited) return;
+
+        try
+        {
+            proc.StandardInput.Close();
+            proc.WaitForExit(10_000);
+        }
+        catch { }
+
+        if (!proc.HasExited)
+            Kill();
+    }
+
+    /// <summary>
+    /// Kill the current process and relaunch.
+    /// If resume=true, uses --resume to restore conversation context from saved session.
+    /// </summary>
+    public void Restart(bool resume)
+    {
+        Kill();
+        _proc?.WaitForExit(5000);
+        _proc = null;
+
+        _resumeMode = resume;
+        Start();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Close();
+        _proc?.Dispose();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  Helpers
+    // ════════════════════════════════════════════════════════════════
 
     private static string? ExtractMarkedResult(string allText)
     {
@@ -314,7 +446,6 @@ public sealed class CliRunner
 
     private static string FindClaude()
     {
-        // Try common locations
         foreach (var name in new[] { "claude", "claude.cmd", "claude.exe" })
         {
             var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
@@ -324,6 +455,6 @@ public sealed class CliRunner
                 if (File.Exists(full)) return full;
             }
         }
-        return "claude"; // fallback — let OS resolve
+        return "claude";
     }
 }

@@ -1,14 +1,13 @@
-using System.Text.Json;
-
 namespace Shikigami.Runner.Services;
 
 /// <summary>
-/// Accumulates filtered conversation history across CLI passes.
-/// event_log: raw events from each CLI pass.
-/// entries: cleaned context used for prompt building.
+/// Audit log of conversation events across CLI turns.
 ///
-/// Horde mode: BeginTask() marks task boundaries. CurrentTaskJson() returns
-/// only entries for the current task. Full history is preserved for debugging.
+/// With persistent CLI sessions, context is maintained by the CLI harness.
+/// This class is no longer used for prompt building — only for:
+///   - UI event tracking (what happened during the session)
+///   - Event log submission to the MCP server
+///   - Horde task boundary tracking
 /// </summary>
 public sealed class ShikigamiContextMemory
 {
@@ -96,30 +95,11 @@ public sealed class ShikigamiContextMemory
     }
 
     /// <summary>
-    /// Serialize only entries for the current task (after the last BeginTask call).
-    /// Used in horde mode to scope history to the active task.
+    /// Number of entries recorded since the last BeginTask call.
+    /// Useful for checking if any work was done on the current task.
     /// </summary>
-    public string CurrentTaskJson()
-    {
-        var start = _currentTaskStartIndex + 1; // skip task_boundary marker
-        if (start >= _entries.Count) return "";
-        var taskEntries = _entries.GetRange(start, _entries.Count - start);
-        return JsonSerializer.Serialize(taskEntries, new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
-    }
-
-    /// <summary>
-    /// Serialize ALL entries (full history across all tasks). For prompt mode and debugging.
-    /// </summary>
-    public string ToJson()
-    {
-        return JsonSerializer.Serialize(_entries, new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
-    }
+    public int CurrentTaskEntryCount =>
+        _entries.Count > _currentTaskStartIndex + 1
+            ? _entries.Count - _currentTaskStartIndex - 1
+            : 0;
 }

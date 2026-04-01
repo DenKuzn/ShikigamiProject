@@ -1,11 +1,13 @@
 using System.IO;
-using System.Text.Json;
 
 namespace Shikigami.Runner.Services;
 
 /// <summary>
-/// Builds prompts for each CLI pass, including MCP header, communication directives,
-/// and conversation history for multi-pass iterations.
+/// Builds the initial prompt for a shikigami's CLI session.
+/// Includes MCP header, communication directives, and the task.
+///
+/// With persistent CLI sessions, only the FIRST message needs the full prompt.
+/// Subsequent messages are raw text — the CLI maintains context internally.
 ///
 /// Prompt templates are loaded from external files next to the executable,
 /// allowing manual editing without recompilation.
@@ -55,35 +57,14 @@ public sealed class PromptBuilder
     }
 
     /// <summary>
-    /// The full prompt as shown before the first pass (for display in the log).
+    /// Build the initial prompt (first message in a persistent CLI session).
+    /// Includes MCP header + communication directive + task.
+    /// Also used for display in the Runner log.
     /// </summary>
-    public string FullPromptDisplay()
+    public string BuildInitialPrompt()
     {
         var suffix = _skipCommDirective ? "" : _commDirective;
         return McpHeader() + suffix + $"\n## Your task:\n{_originalPrompt}";
-    }
-
-    /// <summary>
-    /// Build the prompt for a given pass iteration (prompt mode).
-    /// </summary>
-    public string Build(int iteration, string? cleanContextJson = null)
-    {
-        var mcp = McpHeader();
-        var suffix = _skipCommDirective ? "" : _commDirective;
-
-        if (iteration == 1 || string.IsNullOrEmpty(cleanContextJson))
-            return mcp + suffix + $"\n## Your task:\n{_originalPrompt}";
-
-        var parts = new List<string>
-        {
-            mcp + suffix,
-            $"## Full History (all previous passes)\n```json\n{cleanContextJson}\n```",
-            "Continue from where you left off. " +
-            "Do NOT re-ask answered questions or re-read files you already have in history.",
-            $"## Your task:\n{_originalPrompt}",
-        };
-
-        return string.Join("\n\n", parts);
     }
 
     /// <summary>
