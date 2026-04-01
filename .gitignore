@@ -33,3 +33,4 @@ Desktop.ini
 # Logs
 *.log
 bash.exe.*
+.claude/settings.local.json
