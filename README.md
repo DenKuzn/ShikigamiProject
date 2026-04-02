@@ -2,7 +2,7 @@
 
 **Sub-agent management system for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).**
 
-Shikigami lets Claude Code spawn, monitor, and orchestrate autonomous sub-agents ("shikigami") through MCP. Each sub-agent runs as a separate `claude` CLI process with its own GUI window, communicating with the lead conversation via an MCP server.
+Shikigami lets Claude Code spawn, monitor, and orchestrate autonomous sub-agents ("shikigami") through MCP. Each sub-agent runs as a persistent `claude` CLI session with its own GUI window, communicating with the lead conversation via an MCP server.
 
 Built with .NET 9, C#, and WPF. Windows only.
 
@@ -11,7 +11,7 @@ Built with .NET 9, C#, and WPF. Windows only.
 ## What It Does
 
 - **MCP Server** -- stdio JSON-RPC transport for Claude Code + HTTP REST for sub-agent communication
-- **Runner GUI** -- a WPF window per sub-agent: launches `claude` CLI, parses stream-json output, shows live status and logs
+- **Runner GUI** -- a WPF window per sub-agent: persistent CLI session, live event stream, input panel
 - **Status Dashboard** -- real-time overview of all active agents, costs, pools, and messages
 
 ### How It Works
@@ -30,11 +30,43 @@ Shikigami.Server
     | HTTP REST (localhost:{port})
     v
 Shikigami.Runner (one per agent)
-    |-- Launches `claude` CLI as subprocess
-    |-- Parses events in real-time (tools, thinking, text, result)
-    |-- Registers with server, sends state updates, receives messages
+    |-- Persistent `claude` CLI session (--input-format stream-json)
+    |-- Sends messages via stdin NDJSON, reads responses from stdout
+    |-- Context maintained by CLI harness (no manual history rebuild)
+    |-- Crash recovery via --resume <session-id>
     |-- GUI: header, stats bar, scrollable log, input panel
 ```
+
+---
+
+## Persistent CLI Sessions
+
+Runner keeps a single `claude` CLI process alive for the entire agent session. Messages are sent as NDJSON via stdin, responses are read as stream-json from stdout.
+
+**Why this matters:**
+
+| Metric | Old (relaunch per turn) | Persistent session |
+|--------|------------------------|-------------------|
+| System prompt cost | ~$0.18 per launch | $0.18 once, then ~$0.01/turn (cached) |
+| Context | Manual JSON history rebuild | Maintained by CLI harness |
+| Startup overhead | Full MCP init every turn | Zero after first message |
+| Crash recovery | None (start from scratch) | `--resume` restores full context |
+
+**Protocol:**
+```
+Runner                          claude CLI (persistent)
+  |                                  |
+  |-- stdin: NDJSON user message --> |  (turn 1)
+  |<-- stdout: stream-json events -- |
+  |<-- stdout: result event -------- |
+  |                                  |  (process waits)
+  |-- stdin: NDJSON user message --> |  (turn 2)
+  |<-- stdout: stream-json events -- |
+  |<-- stdout: result event -------- |
+  |          ...                     |
+```
+
+First message contains the full prompt (MCP headers + communication rules + task). All subsequent messages are raw text -- user input, corrections, or messages from other agents. The CLI maintains conversation history internally.
 
 ---
 
@@ -44,8 +76,8 @@ Shikigami.Runner (one per agent)
 
 | Mode | Description |
 |------|-------------|
-| **Prompt** | One agent = one task. Server stores the prompt, launches Runner, Runner executes and submits result |
-| **Horde** (Pools) | A pool of tasks with dependencies. Server launches one Runner per agent type. Each polls for available tasks, executes sequentially, reports completion/failure. Tasks auto-unblock when dependencies complete |
+| **Prompt** | One agent = one task. First message is full prompt; follow-ups are raw text in the same session |
+| **Horde** (Pools) | A pool of tasks with dependencies. One Runner per agent type. Agent retains knowledge from previous tasks across the session |
 
 ### Communication
 
@@ -57,16 +89,28 @@ Shikigami.Runner (one per agent)
 
 - Deep Space dark theme (teal accents, `#0b0e17` background)
 - Live streaming log with syntax-highlighted events
-- Header with animated dot pulse showing agent state (running / idle / waiting)
-- Stats bar (tokens, cost, duration)
+- Header with animated dot pulse showing agent state (working / idle / waiting)
+- Stats bar (turns, tools, cost, context usage)
 - Font zoom (Ctrl + mouse wheel)
 - Smart auto-scroll (terminal-like: scroll up freezes, return to bottom resumes)
 - Multiline input (Ctrl+Enter for newlines)
-- Stop button to kill CLI mid-execution and correct course
+- Stop button: kills CLI, restarts with `--resume` for correction
 - Keep Active button to prevent auto-close on completion
-- `USER_INPUT_REQUIRED` detection: shows input panel, re-launches CLI with answer
+- `USER_INPUT_REQUIRED` detection: shows input panel, sends answer in same session
 - `AGENT_IDLE` mode: agent stays alive, accepts messages or user input
 - Auto-close with 10s countdown on completion
+
+### Crash Recovery
+
+If the CLI process dies unexpectedly:
+1. Runner detects EOF on stdout
+2. Restarts with `--resume <session-id>` to restore conversation context
+3. Sends follow-up message in the restored session
+4. If resume also fails, starts fresh with a new session
+
+### Hang Protection
+
+10-minute timeout on stdout reads. If the CLI hangs (known bug [#25629](https://github.com/anthropics/claude-code/issues/25629)), Runner kills and restarts the process.
 
 ### Status Dashboard
 
@@ -80,6 +124,7 @@ Shikigami.Runner (one per agent)
 - Task dependency graph with automatic unblocking
 - Cascade failure propagation to dependent tasks
 - Per-agent-type task dispatch
+- Agent retains context from previous tasks in the same session
 - Pool-level messaging and broadcast
 - Abort pool command
 
@@ -183,16 +228,18 @@ ShikigamiProject.sln
   src/
     Shikigami.Core/        -- Models, state store, services (class library)
     Shikigami.Server/      -- MCP server + HTTP API + Status Dashboard
-    Shikigami.Runner/      -- WPF GUI per agent (CLI runner, log viewer)
+    Shikigami.Runner/      -- WPF GUI per agent (persistent CLI session, log viewer)
   tests/
     Shikigami.Core.Tests/  -- Unit tests (xUnit)
+  docs/
+    persistent-cli-migration.md  -- R&D document for CLI session migration
 ```
 
 ---
 
 ## Prompt Templates
 
-Runner loads prompt templates from `.txt` files in the `Prompts/` directory next to the executable. Edit these to customize agent behavior without recompilation:
+Runner loads prompt templates from `.txt` files in `Prompts/` next to the executable. These are only used for the **first message** in a persistent session. Edit to customize agent behavior without recompilation:
 
 | File | Purpose |
 |------|---------|
@@ -257,3 +304,4 @@ The server exposes a REST API on localhost for Runner <-> Server communication. 
 - **ModelContextProtocol SDK** for MCP stdio transport
 - **ASP.NET Core** minimal API for HTTP REST
 - **xUnit** for tests
+- **Claude Code CLI** with `--input-format stream-json` for persistent sessions
