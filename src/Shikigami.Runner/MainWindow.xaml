@@ -4,7 +4,7 @@
         Title="Shikigami" Height="680" Width="960"
         MinHeight="440" MinWidth="640"
         Background="#08060F"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="Manual">
 
     <!-- ═══ Domain Expansion animations ═══ -->
     <Window.Triggers>

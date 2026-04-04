@@ -307,6 +307,7 @@ public sealed class RunnerSession
         _userStopped = false;
         _view.SetHeaderStatus("working", StatusColor.Teal);
         _view.SetStopButton(true, 1.0);
+        _ = _mcp.UpdateStateAsync("working", $"Turn {_turn}");
     }
 
     private void FinishCliTurn(RunResult result)

@@ -35,7 +35,7 @@ public sealed class CliSession : IDisposable
     /// Max time to wait for a single stdout line before declaring the process hung.
     /// Generous because tool execution (builds, searches) can take minutes.
     /// </summary>
-    private static readonly TimeSpan ReadLineTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ReadLineTimeout = TimeSpan.FromMinutes(600);
 
     public CliSession(string? agent = null, string? model = null, string? tools = null,
                       string? workdir = null, string? effort = null, string? sessionId = null)

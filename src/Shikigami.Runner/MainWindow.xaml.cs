@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Controls;
@@ -18,18 +19,22 @@ public partial class MainWindow : Window, IRunnerView
     private readonly RunnerSession _session;
     private readonly DispatcherTimer _dotTimer;
     private readonly DispatcherTimer _mcpPollTimer;
+    private bool _stopArmed;
+    private DispatcherTimer? _stopArmTimer;
+    private DispatcherTimer? _stopBlinkTimer;
     private DispatcherTimer? _hordePollTimer;
     private DispatcherTimer? _closeTimer;
     private bool _dotOn;
     private bool _autoScroll = true;
     private bool _polling;
     private double _logFontSize = 12;
-    private readonly List<TextBlock> _collapsibleTextBlocks = new();
+    private readonly List<FrameworkElement> _collapsibleTextBlocks = new();
     private int _closeCountdown;
 
     public MainWindow(AppArgs args)
     {
         InitializeComponent();
+        PositionWindow();
 
         ToolTipService.SetInitialShowDelay(this, 100);
         ToolTipService.SetBetweenShowDelay(this, 0);
@@ -145,7 +150,7 @@ public partial class MainWindow : Window, IRunnerView
         headerPanel.Children.Add(arrowBlock);
         headerPanel.Children.Add(headerBlock);
 
-        var bodyBlock = new TextBlock
+        var bodyBlock = new TextBox
         {
             Text = body,
             Foreground = GetTagBrush(bodyTag),
@@ -154,9 +159,13 @@ public partial class MainWindow : Window, IRunnerView
             TextWrapping = TextWrapping.Wrap,
             Visibility = Visibility.Collapsed,
             Margin = new Thickness(16, 2, 0, 2),
+            IsReadOnly = true,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(0),
         };
 
-        headerPanel.MouseLeftButtonDown += (_, _) =>
+        headerPanel.MouseLeftButtonDown += (_, e) =>
         {
             if (bodyBlock.Visibility == Visibility.Collapsed)
             {
@@ -168,6 +177,7 @@ public partial class MainWindow : Window, IRunnerView
                 bodyBlock.Visibility = Visibility.Collapsed;
                 arrowBlock.Text = "▸ ";
             }
+            e.Handled = true;
         };
 
         var container = new StackPanel();
@@ -248,6 +258,7 @@ public partial class MainWindow : Window, IRunnerView
         StopButton.IsEnabled = enabled;
         StopButton.Opacity = opacity;
         if (text != null) StopButton.Content = text;
+        DisarmStop();
     }
 
     public void SetKeepActiveVisual(bool active)
@@ -320,8 +331,61 @@ public partial class MainWindow : Window, IRunnerView
     private void KeepActiveButton_Click(object sender, RoutedEventArgs e) =>
         _session.OnKeepActiveToggled();
 
-    private void StopButton_Click(object sender, RoutedEventArgs e) =>
+    private void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_stopArmed)
+        {
+            ArmStop();
+            return;
+        }
+
+        DisarmStop();
         _session.OnStopClicked();
+    }
+
+    private void ArmStop()
+    {
+        _stopArmed = true;
+        StopButton.Content = "⚠ 停止!";
+        StopButton.Background = new SolidColorBrush(Color.FromRgb(0x3D, 0x05, 0x05));
+        StopButton.BorderBrush = DeepSpaceTheme.RedBrush;
+        StopButton.ToolTip = "Click again to STOP";
+
+        // Blink animation
+        bool blinkOn = true;
+        _stopBlinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _stopBlinkTimer.Tick += (_, _) =>
+        {
+            blinkOn = !blinkOn;
+            StopButton.Foreground = blinkOn
+                ? DeepSpaceTheme.RedBrush
+                : new SolidColorBrush(Color.FromRgb(0x80, 0x20, 0x20));
+            StopButton.Background = blinkOn
+                ? new SolidColorBrush(Color.FromRgb(0x3D, 0x05, 0x05))
+                : new SolidColorBrush(Color.FromRgb(0x25, 0x02, 0x02));
+        };
+        _stopBlinkTimer.Start();
+
+        // Auto-disarm after 3 seconds
+        _stopArmTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _stopArmTimer.Tick += (_, _) => DisarmStop();
+        _stopArmTimer.Start();
+    }
+
+    private void DisarmStop()
+    {
+        _stopArmed = false;
+        _stopBlinkTimer?.Stop();
+        _stopBlinkTimer = null;
+        _stopArmTimer?.Stop();
+        _stopArmTimer = null;
+
+        StopButton.Content = "■ 停止";
+        StopButton.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+        StopButton.Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x05, 0x05));
+        StopButton.BorderBrush = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+        StopButton.ToolTip = "Stop — kill the running CLI process";
+    }
 
     private void SendButton_Click(object sender, RoutedEventArgs e) => SendInput();
 
@@ -365,14 +429,50 @@ public partial class MainWindow : Window, IRunnerView
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
         _logFontSize = Math.Clamp(_logFontSize + (e.Delta > 0 ? 1 : -1), 6, 30);
         LogBox.FontSize = _logFontSize;
-        foreach (var tb in _collapsibleTextBlocks)
-            tb.FontSize = _logFontSize;
+        foreach (var el in _collapsibleTextBlocks)
+        {
+            if (el is TextBlock tb) tb.FontSize = _logFontSize;
+            else if (el is TextBox tx) tx.FontSize = _logFontSize;
+        }
         e.Handled = true;
     }
 
     // ════════════════════════════════════════════════════════════════
     //  Internal helpers
     // ════════════════════════════════════════════════════════════════
+
+    private void PositionWindow()
+    {
+        const double offset = 100;
+
+        // Count other Runner processes (excluding ourselves)
+        var currentPid = Environment.ProcessId;
+        var currentName = Process.GetCurrentProcess().ProcessName;
+        int others = 0;
+        try
+        {
+            foreach (var p in Process.GetProcessesByName(currentName))
+            {
+                if (p.Id != currentPid) others++;
+                p.Dispose();
+            }
+        }
+        catch { /* access denied — fall back to 0 */ }
+
+        // Start from center screen, then cascade by number of existing runners
+        var screen = SystemParameters.WorkArea;
+        var centerX = (screen.Width - Width) / 2;
+        var centerY = (screen.Height - Height) / 2;
+
+        Left = centerX + offset * others;
+        Top = centerY + offset * others;
+
+        // Clamp so the window doesn't go off-screen
+        if (Left + Width > screen.Right)
+            Left = screen.Left + offset * (others % 3);
+        if (Top + Height > screen.Bottom)
+            Top = screen.Top + offset * (others % 3);
+    }
 
     private void StopHordePollInternal()
     {
