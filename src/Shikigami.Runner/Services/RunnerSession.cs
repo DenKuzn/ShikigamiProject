@@ -285,7 +285,10 @@ public sealed class RunnerSession
     {
         _shuttingDown = true;
         _view.StopHordePoll();
-        _cli.Close();
+        // Kill directly — do NOT try graceful Close().
+        // claude.cmd (cmd.exe → node.exe): closing stdin makes cmd.exe exit on its own,
+        // which orphans node.exe before taskkill /T can kill the process tree.
+        _cli.Kill();
 
         try
         {
