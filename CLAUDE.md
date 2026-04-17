@@ -137,6 +137,25 @@ One JSON object per line. UTF-8 without BOM (`new UTF8Encoding(false)`).
   (process waits for next message)
 ```
 
+### Thinking blocks are encrypted (Opus 4.7+)
+
+Since Claude Opus 4.7 / Claude Code v2.1.112, extended thinking content is **no longer exposed in plain text**. The block still arrives, but shaped like this:
+
+```json
+{"type": "thinking", "thinking": "", "signature": "<~4000 chars of encrypted payload>"}
+```
+
+| Field | Meaning |
+|---|---|
+| `thinking` | Always empty string — raw reasoning text is NOT accessible client-side |
+| `signature` | Encrypted thinking, used only for multi-turn context continuity by the CLI/API |
+
+**Consequences for the Runner:**
+
+- `CliSession.cs` extracts `thinking` as before — the value is empty, so `RunnerSession.HandleCliEvent` falls through to the `AppendLog("(thinking...)", "dim")` branch (no collapsible content to show).
+- When the model is instructed to reason, it often **duplicates the reasoning into a regular `text` block** that follows the empty thinking block. This text renders via `case "text"` as a normal response — NOT as collapsible. This is why reasoning now appears "unfolded" in the log compared to pre-4.7 behavior.
+- Nothing to fix in our code — the reasoning text is intentionally withheld by Anthropic. Downgrading the CLI or changing flags does not bring the plain text back.
+
 ### Key Benefits vs Old One-Shot Model
 
 | Metric | Old (relaunch per turn) | New (persistent) |
