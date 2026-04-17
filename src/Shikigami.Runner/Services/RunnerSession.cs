@@ -346,6 +346,7 @@ public sealed class RunnerSession
     /// </summary>
     private async Task<RunResult> SendMessageAsync(string content)
     {
+        if (_shuttingDown) return new RunResult { Error = "shutting down" };
         EnsureCliAlive();
 
         _turn++;
@@ -375,6 +376,7 @@ public sealed class RunnerSession
     /// </summary>
     private void EnsureCliAlive()
     {
+        if (_shuttingDown) return;
         if (_cli.IsAlive) return;
         var stderr = _cli.LastStderr;
         _view.AppendLog("[session] CLI not alive — restarting with resume...", "error");
@@ -429,6 +431,8 @@ public sealed class RunnerSession
 
     private async Task EvaluatePromptResult(RunResult result)
     {
+        if (_shuttingDown) return;
+
         if (_userStopped)
         {
             _userStopped = false;
@@ -494,6 +498,8 @@ public sealed class RunnerSession
 
     private async Task<HordeOutcome> EvaluateHordeResult(RunResult result)
     {
+        if (_shuttingDown) return HordeOutcome.Error;
+
         if (_userStopped)
         {
             _userStopped = false;
@@ -549,6 +555,7 @@ public sealed class RunnerSession
     {
         while (true)
         {
+            if (_shuttingDown) return;
             _view.StopHordePoll();
 
             var resp = await _mcp.RequestTaskAsync(_args.PoolId!, _args.AgentType!, _agentId);
