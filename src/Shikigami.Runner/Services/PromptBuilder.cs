@@ -116,15 +116,33 @@ public sealed class PromptBuilder
         "CRITICAL: Every final response MUST end with one of these markers: " +
         "USER_INPUT_REQUIRED, AGENT_IDLE, or AGENT_COMPLETED. " +
         "A response without a marker is treated as an error.\n\n" +
-        "## Result Format\n" +
-        "When finishing (AGENT_COMPLETED or AGENT_IDLE), wrap your final result summary in markers:\n\n" +
+        "## Result Format\n\n" +
+        "CRITICAL: The lead agent CANNOT see any text in your response except what is " +
+        "between AGENT_RESULT_BEGIN and AGENT_RESULT_END. Everything outside these markers " +
+        "is discarded — the lead never reads it.\n\n" +
+        "Put the ENTIRE deliverable inside the markers: the full report, the full analysis, " +
+        "the full fix plan, the full list of findings. Do NOT write a \"summary\" version " +
+        "inside and a \"full\" version outside — the outside version is thrown away.\n\n" +
+        "When finishing (AGENT_COMPLETED or AGENT_IDLE), structure your response like this:\n\n" +
         "AGENT_RESULT_BEGIN\n" +
-        "<your result summary here>\n" +
+        "<your complete deliverable — the full content the lead needs to read>\n" +
         "AGENT_RESULT_END\n\n" +
         "AGENT_COMPLETED\n\n" +
-        "The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. " +
-        "Without these markers, the result may be lost or incomplete. " +
-        "Place them in the same response as your completion marker.\n";
+        "WRONG (common mistake — do not do this):\n" +
+        "  ## Full Report\n" +
+        "  ...long detailed report for the user...\n\n" +
+        "  AGENT_RESULT_BEGIN\n" +
+        "  Short summary of the report.\n" +
+        "  AGENT_RESULT_END\n\n" +
+        "  AGENT_COMPLETED\n\n" +
+        "RIGHT:\n" +
+        "  AGENT_RESULT_BEGIN\n" +
+        "  ...the full detailed report, complete and self-contained...\n" +
+        "  AGENT_RESULT_END\n\n" +
+        "  AGENT_COMPLETED\n\n" +
+        "The lead is not a human reading a chat. It is an orchestrator that receives ONLY " +
+        "the text between the markers. Write the full content INSIDE the markers and nothing " +
+        "outside them except the completion marker itself.\n";
 
     private const string DefaultHordeCommDirective =
         "\n\n## Communication\n" +
@@ -137,15 +155,36 @@ public sealed class PromptBuilder
         "CRITICAL: Every final response MUST end with one of these markers: " +
         "USER_INPUT_REQUIRED, TASK_COMPLETED, or TASK_FAILED. " +
         "A response without a marker is treated as an error.\n\n" +
-        "## Result Format\n" +
-        "When finishing (TASK_COMPLETED), wrap your result summary in markers:\n\n" +
+        "## Result Format\n\n" +
+        "CRITICAL: The lead agent CANNOT see any text in your response except what is " +
+        "between AGENT_RESULT_BEGIN and AGENT_RESULT_END. Everything outside these markers " +
+        "is discarded — the lead never reads it.\n\n" +
+        "Put the ENTIRE deliverable for task \"{title}\" inside the markers: the full report " +
+        "of what was done, the full list of deviations and additions, any warnings or " +
+        "follow-up notes. Do NOT write a \"summary\" version inside and a \"full\" version " +
+        "outside — the outside version is thrown away.\n\n" +
+        "When finishing (TASK_COMPLETED), structure your response like this:\n\n" +
         "AGENT_RESULT_BEGIN\n" +
-        "Task \"{title}\" completed. <brief summary of what was done, deviations, additions>\n" +
+        "Task \"{title}\" completed.\n" +
+        "<full report: what was done, deviations from the spec, additions, warnings — complete and self-contained>\n" +
         "AGENT_RESULT_END\n\n" +
         "TASK_COMPLETED\n\n" +
-        "The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. " +
-        "Without these markers, the result may be lost or incomplete. " +
-        "Place them in the same response as your completion marker.\n";
+        "WRONG (common mistake — do not do this):\n" +
+        "  ## Full Report\n" +
+        "  ...long detailed report for the user...\n\n" +
+        "  AGENT_RESULT_BEGIN\n" +
+        "  Task \"{title}\" completed. Short summary.\n" +
+        "  AGENT_RESULT_END\n\n" +
+        "  TASK_COMPLETED\n\n" +
+        "RIGHT:\n" +
+        "  AGENT_RESULT_BEGIN\n" +
+        "  Task \"{title}\" completed.\n" +
+        "  ...full detailed report, complete and self-contained...\n" +
+        "  AGENT_RESULT_END\n\n" +
+        "  TASK_COMPLETED\n\n" +
+        "The lead is not a human reading a chat. It is an orchestrator that receives ONLY " +
+        "the text between the markers. Write the full content INSIDE the markers and nothing " +
+        "outside them except the completion marker itself.\n";
 
     private const string DefaultMcpHeader =
         "## MCP Connection\n" +

@@ -13,12 +13,36 @@ TASK_FAILED: <reason>
 CRITICAL: Every final response MUST end with one of these markers: USER_INPUT_REQUIRED, TASK_COMPLETED, or TASK_FAILED. A response without a marker is treated as an error.
 
 ## Result Format
-When finishing (TASK_COMPLETED), wrap your result summary in markers:
+
+CRITICAL: The lead agent CANNOT see any text in your response except what is between AGENT_RESULT_BEGIN and AGENT_RESULT_END. Everything outside these markers is discarded — the lead never reads it.
+
+Put the ENTIRE deliverable for task "{title}" inside the markers: the full report of what was done, the full list of deviations and additions, any warnings or follow-up notes. Do NOT write a "summary" version inside and a "full" version outside — the outside version is thrown away.
+
+When finishing (TASK_COMPLETED), structure your response like this:
 
 AGENT_RESULT_BEGIN
-Task "{title}" completed. <brief summary of what was done, deviations, additions>
+Task "{title}" completed.
+<full report: what was done, deviations from the spec, additions, warnings — complete and self-contained>
 AGENT_RESULT_END
 
 TASK_COMPLETED
 
-The text between AGENT_RESULT_BEGIN and AGENT_RESULT_END is captured as your result. Without these markers, the result may be lost or incomplete. Place them in the same response as your completion marker.
+WRONG (common mistake — do not do this):
+  ## Full Report
+  ...long detailed report for the user...
+
+  AGENT_RESULT_BEGIN
+  Task "{title}" completed. Short summary.
+  AGENT_RESULT_END
+
+  TASK_COMPLETED
+
+RIGHT:
+  AGENT_RESULT_BEGIN
+  Task "{title}" completed.
+  ...full detailed report, complete and self-contained...
+  AGENT_RESULT_END
+
+  TASK_COMPLETED
+
+The lead is not a human reading a chat. It is an orchestrator that receives ONLY the text between the markers. Write the full content INSIDE the markers and nothing outside them except the completion marker itself.
