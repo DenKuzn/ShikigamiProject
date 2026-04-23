@@ -13,10 +13,15 @@ public sealed class AgentRecord
     public required string AgentType { get; set; }
     public bool Active { get; set; } = true;
     public string RegisteredAt { get; set; } = DateTime.UtcNow.ToString("o");
-    public string? Status { get; set; }
     public string? CurrentStep { get; set; }
-    public object? Metadata { get; set; }
     public string? Result { get; set; }
     public object? EventLog { get; set; }
     public double CostUsd { get; set; }
+
+    /// <summary>
+    /// Extract the canonical state token from <see cref="CurrentStep"/>.
+    /// The token is the prefix before the first ':' (trimmed).
+    /// Returns an empty string when CurrentStep is null/empty.
+    /// </summary>
+    public string GetState() => (CurrentStep ?? "").Split(':', 2)[0].Trim();
 }

@@ -32,26 +32,25 @@ public sealed class ShikigamiMcpTools
     }
 
     [McpServerTool(Name = "list_agents"),
-     Description("Get list of all active agents (ID, name, type, task).")]
+     Description("Get list of all active agents (ID, name, agent_type).")]
     public string ListAgents()
     {
         var result = _state.Agents.Values
             .Where(a => a.Active)
-            .Select(a => new { id = a.Id, name = a.Name, agent_type = a.AgentType, task = a.Task })
+            .Select(a => new { id = a.Id, name = a.Name, agent_type = a.AgentType })
             .ToList();
         return JsonSerializer.Serialize(result);
     }
 
     [McpServerTool(Name = "get_agent_state"),
-     Description("Get recorded state of a specific agent by ID (status, current_step, metadata).")]
+     Description("Get recorded state of a specific agent by ID. Returns {id, name, agent_type, current_step}.")]
     public string GetAgentState(string agent_id)
     {
         if (!_state.Agents.TryGetValue(agent_id, out var a))
             return JsonSerializer.Serialize(new { error = "Agent not found" });
         return JsonSerializer.Serialize(new
         {
-            id = a.Id, name = a.Name, active = a.Active,
-            status = a.Status, current_step = a.CurrentStep, metadata = a.Metadata,
+            id = a.Id, name = a.Name, agent_type = a.AgentType, current_step = a.CurrentStep,
         });
     }
 
@@ -89,12 +88,12 @@ public sealed class ShikigamiMcpTools
         return JsonSerializer.Serialize(messages);
     }
 
-    [McpServerTool(Name = "list_prompts"),
-     Description("List all stored prompts with their IDs and creation times (for debugging).")]
+    [McpServerTool(Name = "DEBUG_list_prompts"),
+     Description("List all stored prompts with their IDs and creation times (debug tool — returns all stored prompts with full text).")]
     public string ListPrompts()
     {
         var result = _state.Prompts.Values
-            .Select(p => new { id = p.Id, text_preview = p.Text[..Math.Min(100, p.Text.Length)], created_at = p.CreatedAt })
+            .Select(p => new { id = p.Id, text = p.Text, created_at = p.CreatedAt })
             .ToList();
         return JsonSerializer.Serialize(result);
     }
@@ -106,8 +105,8 @@ public sealed class ShikigamiMcpTools
         if (!_state.Agents.TryGetValue(agent_id, out var a))
             return JsonSerializer.Serialize(new { error = "Agent not found" });
         if (a.Result == null)
-            return JsonSerializer.Serialize(new { error = "No result yet", status = a.Status });
-        return JsonSerializer.Serialize(new { id = a.Id, name = a.Name, status = a.Status, result = a.Result });
+            return JsonSerializer.Serialize(new { error = "No result yet", current_step = a.CurrentStep });
+        return JsonSerializer.Serialize(new { id = a.Id, name = a.Name, current_step = a.CurrentStep, result = a.Result });
     }
 
     [McpServerTool(Name = "get_agent_log"),
@@ -117,7 +116,7 @@ public sealed class ShikigamiMcpTools
         if (!_state.Agents.TryGetValue(agent_id, out var a))
             return JsonSerializer.Serialize(new { error = "Agent not found" });
         if (a.EventLog == null)
-            return JsonSerializer.Serialize(new { error = "No event log yet", status = a.Status });
+            return JsonSerializer.Serialize(new { error = "No event log yet", current_step = a.CurrentStep });
         return JsonSerializer.Serialize(a.EventLog);
     }
 
@@ -204,14 +203,13 @@ public sealed class ShikigamiMcpTools
                 tasks_pending = tasks.Count(t => t.Status == "pending"),
                 tasks_in_progress = tasks.Count(t => t.Status == "in_progress"),
                 agents_active = pool.Agents.Values.Count(a => a.Active),
-                created_at = pool.CreatedAt,
             };
         }).ToList();
         return JsonSerializer.Serialize(result);
     }
 
     [McpServerTool(Name = "list_pool_tasks"),
-     Description("List all tasks in a specific pool with statuses, assignments, results, and dependencies.")]
+     Description("List all tasks in a specific pool with statuses, assignments, and dependencies.")]
     public string ListPoolTasks(string pool_id)
     {
         if (!_state.Pools.TryGetValue(pool_id, out var pool))
@@ -224,10 +222,27 @@ public sealed class ShikigamiMcpTools
             {
                 id = t.Id, title = t.Title, agent_type = t.AgentType,
                 status = t.Status, depends_on = t.DependsOn,
-                assigned_to = t.AssignedTo, result = t.Result,
+                assigned_to = t.AssignedTo,
             };
         }).ToList();
         return JsonSerializer.Serialize(new { pool_id, status = pool.Status, tasks });
+    }
+
+    [McpServerTool(Name = "get_pool_task_result"),
+     Description("Get the result of a specific pool task. Returns {pool_id, task_id, title, status, result} or an error if not found or no result yet.")]
+    public string GetPoolTaskResult(string pool_id, string task_id)
+    {
+        if (!_state.Pools.TryGetValue(pool_id, out var pool))
+            return JsonSerializer.Serialize(new { error = "Pool not found" });
+        if (!pool.Tasks.TryGetValue(task_id, out var task))
+            return JsonSerializer.Serialize(new { error = "Task not found" });
+        if (string.IsNullOrEmpty(task.Result))
+            return JsonSerializer.Serialize(new { error = "No result yet", status = task.Status });
+        return JsonSerializer.Serialize(new
+        {
+            pool_id, task_id,
+            title = task.Title, status = task.Status, result = task.Result,
+        });
     }
 
     [McpServerTool(Name = "abort_pool"),
@@ -314,6 +329,82 @@ public sealed class ShikigamiMcpTools
         foreach (var msg in messages)
             ShikigamiState.PoolToTrash(pool, msg, "lead", "read");
         return JsonSerializer.Serialize(messages);
+    }
+
+    [McpServerTool(Name = "wait_for_agent"),
+     Description("Block until the agent reaches a terminal-or-idle state. " +
+                  "Returns {agent_id, current_step}. Canonical tokens in current_step " +
+                  "(prefix before ': '): completed, failed, dead, idle, taken, timeout. " +
+                  "'idle' means AGENT_IDLE marker (result is ready); " +
+                  "'taken' means a human is in the loop and the agent will not finish on its own. " +
+                  "timeout_sec default 1800. Use this INSTEAD of polling.")]
+    public async Task<string> WaitForAgent(string agent_id, int timeout_sec = 1800)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeout_sec);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!_state.Agents.TryGetValue(agent_id, out var agent))
+                return JsonSerializer.Serialize(new { agent_id, current_step = "dead" });
+
+            if (!agent.Active)
+                return JsonSerializer.Serialize(new { agent_id, current_step = agent.CurrentStep });
+
+            if (agent.GetState() is "completed" or "failed" or "idle" or "taken")
+                return JsonSerializer.Serialize(new { agent_id, current_step = agent.CurrentStep });
+
+            await Task.Delay(500);
+        }
+        return JsonSerializer.Serialize(new { agent_id, current_step = "timeout" });
+    }
+
+    [McpServerTool(Name = "wait_for_pool"),
+     Description("Block until the pool finishes (all tasks terminal) or is aborted. " +
+                  "Returns {pool_id, pool_status, tasks:[{id, title, status, assigned_to}]}. " +
+                  "timeout_sec default 1800. Use this INSTEAD of polling list_pool_tasks.")]
+    public async Task<string> WaitForPool(string pool_id, int timeout_sec = 1800)
+    {
+        if (!_state.Pools.TryGetValue(pool_id, out var pool))
+            return JsonSerializer.Serialize(new { error = "Pool not found" });
+
+        var deadline = DateTime.UtcNow.AddSeconds(timeout_sec);
+        while (pool.Status == "in_progress" && DateTime.UtcNow < deadline)
+            await Task.Delay(1000);
+
+        var tasks = pool.TaskOrder.Select(tid =>
+        {
+            var t = pool.Tasks[tid];
+            return new
+            {
+                id = t.Id, title = t.Title, status = t.Status,
+                assigned_to = t.AssignedTo,
+            };
+        }).ToList();
+
+        var status = pool.Status == "in_progress" ? "timeout" : pool.Status;
+        return JsonSerializer.Serialize(new { pool_id, pool_status = status, tasks });
+    }
+
+    [McpServerTool(Name = "wait_for_messages"),
+     Description("Long-poll the lead inbox. Blocks until at least one message arrives or timeout. " +
+                  "Returns array of {sender_id, text, timestamp}. Messages with text prefixed " +
+                  "'[child_update]', '[task_update]', '[pool_update]' are server-generated events " +
+                  "carrying JSON payloads about child/task/pool state changes. " +
+                  "timeout_sec default 1800. Use this INSTEAD of repeated check_messages.")]
+    public async Task<string> WaitForMessages(int timeout_sec = 1800)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(timeout_sec);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (_state.Queues.TryGetValue("lead", out var queue) && queue.Count > 0)
+            {
+                var messages = queue.DrainAll();
+                foreach (var msg in messages)
+                    _state.ToTrash(msg, "lead", "read");
+                return JsonSerializer.Serialize(messages);
+            }
+            await Task.Delay(500);
+        }
+        return JsonSerializer.Serialize(Array.Empty<MessageRecord>());
     }
 
     [McpServerTool(Name = "send_pool_message"),

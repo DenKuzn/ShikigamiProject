@@ -103,22 +103,28 @@ public partial class MainWindow : Window, IRunnerView
             LogBox.Document.Blocks.Add(para);
         }
 
-        var run = new Run(text)
+        var brush = tag switch
         {
-            Foreground = tag switch
-            {
-                "sys" => DeepSpaceTheme.FgDimBrush,
-                "tool" => DeepSpaceTheme.CyanBrush,
-                "text" => DeepSpaceTheme.FgBrush,
-                "prompt" => DeepSpaceTheme.LavenderBrush,
-                "result" => DeepSpaceTheme.GreenBrush,
-                "error" => DeepSpaceTheme.RedBrush,
-                "task" => DeepSpaceTheme.AmberBrush,
-                "dim" => DeepSpaceTheme.FgDimBrush,
-                _ => DeepSpaceTheme.FgBrush,
-            }
+            "sys" => DeepSpaceTheme.FgDimBrush,
+            "tool" => DeepSpaceTheme.CyanBrush,
+            "text" => DeepSpaceTheme.FgBrush,
+            "prompt" => DeepSpaceTheme.LavenderBrush,
+            "result" => DeepSpaceTheme.GreenBrush,
+            "error" => DeepSpaceTheme.RedBrush,
+            "task" => DeepSpaceTheme.AmberBrush,
+            "dim" => DeepSpaceTheme.FgDimBrush,
+            _ => DeepSpaceTheme.FgBrush,
         };
-        para.Inlines.Add(run);
+
+        // Split by \r\n, \n, \r — Run does not render \n as a line break in FlowDocument,
+        // so multi-line input would otherwise collapse into a single visible line.
+        var lines = text.Split(new[] { "\r\n", "\n", "\r" }, System.StringSplitOptions.None);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (i > 0) para.Inlines.Add(new LineBreak());
+            para.Inlines.Add(new Run(lines[i]) { Foreground = brush });
+        }
+
         if (_autoScroll)
             LogScroller.ScrollToEnd();
     }

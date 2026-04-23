@@ -44,10 +44,25 @@ public static class PoolEndpoints
                 {
                     id = t.Id, title = t.Title, agent_type = t.AgentType,
                     status = t.Status, depends_on = t.DependsOn,
-                    assigned_to = t.AssignedTo, result = t.Result,
+                    assigned_to = t.AssignedTo,
                 };
             }).ToList();
             return Results.Json(new { pool_id = poolId, status = pool.Status, tasks });
+        });
+
+        app.MapGet("/pools/{poolId}/tasks/{taskId}/result", (string poolId, string taskId) =>
+        {
+            if (!state.Pools.TryGetValue(poolId, out var pool))
+                return Results.Json(new { error = "Pool not found" }, statusCode: 404);
+            if (!pool.Tasks.TryGetValue(taskId, out var task))
+                return Results.Json(new { error = "Task not found" }, statusCode: 404);
+            if (string.IsNullOrEmpty(task.Result))
+                return Results.Json(new { error = "No result yet", status = task.Status }, statusCode: 404);
+            return Results.Json(new
+            {
+                pool_id = poolId, task_id = taskId,
+                title = task.Title, status = task.Status, result = task.Result,
+            });
         });
 
         app.MapGet("/pools/{poolId}/tasks/request", (string poolId, HttpContext ctx) =>
@@ -107,7 +122,11 @@ public static class PoolEndpoints
                     unblocked.Add(other.Id);
             }
 
+            state.NotifyPoolTask(pool, task, agentId);
+            var wasInProgress = pool.Status == "in_progress";
             poolService.CheckPoolCompletion(poolId);
+            if (wasInProgress && pool.Status != "in_progress")
+                state.NotifyPoolTerminal(pool);
             return Results.Json(new { ok = true, unblocked });
         });
 
@@ -128,8 +147,48 @@ public static class PoolEndpoints
             task.CompletedAt = DateTime.UtcNow.ToString("o");
 
             var cascadeFailed = poolService.CascadeFailure(pool, taskId);
+            state.NotifyPoolTask(pool, task, agentId);
+            foreach (var cfId in cascadeFailed)
+            {
+                if (pool.Tasks.TryGetValue(cfId, out var cfTask))
+                    state.NotifyPoolTask(pool, cfTask, null);
+            }
+            var wasInProgress = pool.Status == "in_progress";
             poolService.CheckPoolCompletion(poolId);
+            if (wasInProgress && pool.Status != "in_progress")
+                state.NotifyPoolTerminal(pool);
             return Results.Json(new { ok = true, cascade_failed = cascadeFailed });
+        });
+
+        app.MapGet("/pools/{poolId}/wait", async (string poolId, HttpContext ctx) =>
+        {
+            if (!state.Pools.TryGetValue(poolId, out var pool))
+                return Results.Json(new { error = "Pool not found" }, statusCode: 404);
+
+            var timeout = int.TryParse(ctx.Request.Query["timeout"].FirstOrDefault(), out var t) ? t : 1800;
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+
+            while (pool.Status == "in_progress" && DateTime.UtcNow < deadline)
+            {
+                try { await Task.Delay(1000, ctx.RequestAborted); }
+                catch (OperationCanceledException) { break; }
+            }
+
+            var tasks = pool.TaskOrder.Select(tid =>
+            {
+                var tk = pool.Tasks[tid];
+                return new
+                {
+                    id = tk.Id,
+                    title = tk.Title,
+                    status = tk.Status,
+                    assigned_to = tk.AssignedTo,
+                };
+            }).ToList();
+
+            var status = pool.Status == "in_progress" ? "timeout" : pool.Status;
+            var code = status == "timeout" ? 408 : 200;
+            return Results.Json(new { pool_id = poolId, pool_status = status, tasks }, statusCode: code);
         });
 
         app.MapPost("/pools/{poolId}/agents/register", async (string poolId, HttpContext ctx) =>

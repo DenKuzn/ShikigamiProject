@@ -53,9 +53,16 @@ public static class AgentEndpoints
                 return Results.Json(new { error = "Agent not found or inactive" }, statusCode: 404);
 
             var data = await ctx.Request.ReadFromJsonAsync<JsonElement>();
-            if (data.TryGetProperty("status", out var s)) agent.Status = s.GetString();
+            var prevState = agent.GetState();
             if (data.TryGetProperty("current_step", out var cs)) agent.CurrentStep = cs.GetString();
-            if (data.TryGetProperty("metadata", out var m)) agent.Metadata = m;
+
+            // Auto-notify parent on transitions to terminal/idle/taken canonical states
+            var newState = agent.GetState();
+            if (newState != prevState
+                && newState is "completed" or "failed" or "idle" or "taken")
+            {
+                state.NotifyParent(agent);
+            }
 
             return Results.Json(new { ok = true });
         });
@@ -64,7 +71,7 @@ public static class AgentEndpoints
         {
             var result = state.Agents.Values
                 .Where(a => a.Active)
-                .Select(a => new { id = a.Id, name = a.Name, agent_type = a.AgentType, task = a.Task })
+                .Select(a => new { id = a.Id, name = a.Name, agent_type = a.AgentType })
                 .ToList();
             return Results.Json(result);
         });
@@ -108,7 +115,7 @@ public static class AgentEndpoints
         {
             if (!state.Agents.TryGetValue(id, out var a))
                 return Results.Json(new { error = "Agent not found" }, statusCode: 404);
-            return Results.Json(new { id = a.Id, name = a.Name, active = a.Active, status = a.Status, current_step = a.CurrentStep });
+            return Results.Json(new { id = a.Id, name = a.Name, agent_type = a.AgentType, current_step = a.CurrentStep });
         });
 
         app.MapGet("/agents/{id}/result", (string id) =>
@@ -116,8 +123,8 @@ public static class AgentEndpoints
             if (!state.Agents.TryGetValue(id, out var a))
                 return Results.Json(new { error = "Agent not found" }, statusCode: 404);
             if (a.Result == null)
-                return Results.Json(new { error = "No result yet", status = a.Status }, statusCode: 404);
-            return Results.Json(new { id = a.Id, name = a.Name, status = a.Status, result = a.Result });
+                return Results.Json(new { error = "No result yet", current_step = a.CurrentStep }, statusCode: 404);
+            return Results.Json(new { id = a.Id, name = a.Name, current_step = a.CurrentStep, result = a.Result });
         });
 
         app.MapPut("/agents/{id}/result", async (string id, HttpContext ctx) =>
@@ -172,19 +179,41 @@ public static class AgentEndpoints
 
             while (elapsed < timeout)
             {
-                if (state.Agents.TryGetValue(id, out var agent))
-                {
-                    if (agent.Status is "completed" or "failed")
-                        return Results.Json(new { agent_id = id, status = agent.Status });
-                    if (agent.Status == "idle")
-                        return Results.Json(new { agent_id = id, status = "idle" });
-                    if (!agent.Active && agent.Status == null)
-                        return Results.Json(new { agent_id = id, status = "dead" });
-                }
+                if (!state.Agents.TryGetValue(id, out var agent))
+                    return Results.Json(new { agent_id = id, current_step = "dead" });
+
+                if (!agent.Active)
+                    return Results.Json(new { agent_id = id, current_step = agent.CurrentStep });
+
+                if (agent.GetState() is "completed" or "failed" or "idle" or "taken")
+                    return Results.Json(new { agent_id = id, current_step = agent.CurrentStep });
+
                 await Task.Delay(interval * 1000, ctx.RequestAborted);
                 elapsed += interval;
             }
-            return Results.Json(new { agent_id = id, status = "timeout" }, statusCode: 408);
+            return Results.Json(new { agent_id = id, current_step = "timeout" }, statusCode: 408);
+        });
+
+        app.MapGet("/messages/{agentId}/wait", async (string agentId, HttpContext ctx) =>
+        {
+            var timeout = int.TryParse(ctx.Request.Query["timeout"].FirstOrDefault(), out var t) ? t : 1800;
+            if (agentId != "lead" && (!state.Agents.TryGetValue(agentId, out var a) || !a.Active))
+                return Results.Json(new { error = "Agent not found" }, statusCode: 404);
+
+            var deadline = DateTime.UtcNow.AddSeconds(timeout);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (state.Queues.TryGetValue(agentId, out var queue) && queue.Count > 0)
+                {
+                    var messages = queue.DrainAll();
+                    foreach (var msg in messages)
+                        state.ToTrash(msg, agentId, "read");
+                    return Results.Json(messages);
+                }
+                try { await Task.Delay(500, ctx.RequestAborted); }
+                catch (OperationCanceledException) { return Results.Json(Array.Empty<MessageRecord>()); }
+            }
+            return Results.Json(Array.Empty<MessageRecord>());
         });
 
         // HTTP mirrors of MCP tools

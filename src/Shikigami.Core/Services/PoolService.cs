@@ -74,13 +74,14 @@ public sealed class PoolService
     /// <summary>
     /// Create a new pool from a validated task batch.
     /// </summary>
-    public PoolRecord CreatePool(string poolId, List<Dictionary<string, object>> tasksBatch, string name = "")
+    public PoolRecord CreatePool(string poolId, List<Dictionary<string, object>> tasksBatch, string name = "", string leadId = "lead")
     {
         var now = DateTime.UtcNow.ToString("o");
         var pool = new PoolRecord
         {
             Id = poolId,
             Name = string.IsNullOrEmpty(name) ? poolId : name,
+            LeadId = string.IsNullOrEmpty(leadId) ? "lead" : leadId,
             CreatedAt = now,
         };
 

@@ -199,16 +199,42 @@ public sealed class PromptBuilder
         "| curl -s -X POST http://127.0.0.1:{port}/messages/send " +
         "-H \"Content-Type: application/json; charset=utf-8\" -d @-\n" +
         "```\n\n" +
-        "### Check your messages\n" +
+        "### Check your messages (instant)\n" +
         "```bash\n" +
         "curl -s \"http://127.0.0.1:{port}/messages/{agent_id}\"\n" +
         "```\n\n" +
+        "### Long-poll your inbox (PREFERRED)\n" +
+        "```bash\n" +
+        "curl -s \"http://127.0.0.1:{port}/messages/{agent_id}/wait?timeout=1800\"\n" +
+        "```\n" +
+        "Blocks up to 1800 seconds, returns as soon as any message arrives. Use this INSTEAD of polling in a loop.\n\n" +
         "### Discover other agents\n" +
-        "`curl -s http://127.0.0.1:{port}/agents` — returns `[{\"id\",\"name\",\"agent_type\",\"task\"}]`. Use `id` as `recipient_id`.\n\n" +
-        "### Completion report (MANDATORY)\n" +
-        "Before finishing (AGENT_COMPLETED), send a brief report to `{lead_id}` (what was done + problems, under 500 chars). No exceptions.\n\n" +
+        "`curl -s http://127.0.0.1:{port}/agents` — returns `[{\"id\",\"name\",\"agent_type\"}]`.\n\n" +
+        "### If YOU spawn children\n" +
+        "Server auto-pushes events into your inbox — do NOT poll children individually. Events arrive as messages with prefixes:\n" +
+        "- `[child_update] {child_id, name, current_step}` — child agent reached terminal/idle state. " +
+        "current_step is a free-form string; canonical token (prefix before `\": \"`):\n" +
+        "  * completed: terminal success; fetch result via /agents/<child_id>/result.\n" +
+        "  * failed: terminal failure; detail after `\": \"` is the reason.\n" +
+        "  * dead: server detected the child's process is gone.\n" +
+        "  * idle: AGENT_IDLE, result is ready, fetch via /agents/<child_id>/result.\n" +
+        "  * taken: a human is in the loop (USER_INPUT_REQUIRED or Stop pressed). The child will NOT resume on its own — move on without it.\n" +
+        "- `[task_update] {pool_id, task_id, title, status, agent_id}` — pool task finished. " +
+        "To read the task result, call `GET /pools/<pool_id>/tasks/<task_id>/result`.\n" +
+        "- `[pool_update] {pool_id, status, tasks_total, tasks_completed, tasks_failed}` — entire pool finished.\n\n" +
+        "Pattern: spawn → long-poll your inbox → parse events → fetch full results via /agents/<id>/result or /pools/<pid>/tasks/<tid>/result when needed.\n\n" +
+        "### Wait for a specific child (fallback)\n" +
+        "```bash\n" +
+        "curl -s \"http://127.0.0.1:{port}/agents/<child_id>/wait?timeout=1800\"\n" +
+        "curl -s \"http://127.0.0.1:{port}/pools/<pool_id>/wait?timeout=1800\"\n" +
+        "```\n\n" +
+        "### Completion report\n" +
+        "The Runner reports your completion automatically. Use `/messages/send` ONLY for live coordination with other agents or the lead " +
+        "(e.g. asking a blocking question, pinging an idle peer). NEVER use it to deliver results — your result is delivered " +
+        "automatically via the AGENT_RESULT markers and fetched by the lead through `/agents/<your_id>/result`.\n\n" +
         "### Boundaries\n" +
-        "You CAN: send/check messages, discover agents. You CANNOT: use MCP tools (`mcp__ShikigamiMCP__*`), read other agents' messages, register/unregister agents.\n" +
+        "You CAN: send/check/long-poll messages, discover agents, wait for children/pools.\n" +
+        "You CANNOT: use MCP tools (`mcp__ShikigamiMCP__*`), read other agents' inboxes, register/unregister agents.\n" +
         "PREFER `USER_INPUT_REQUIRED` over messaging for blocking questions — the runner handles re-launch with the answer automatically.\n";
 
     private const string DefaultPoolMcpHeader =
@@ -219,5 +245,8 @@ public sealed class PromptBuilder
         "- **Pool ID**: {pool_id}\n" +
         "- **Send message**: POST http://127.0.0.1:{port}/pools/{pool_id}/messages/send\n" +
         "  Body: {\"sender_id\":\"{agent_id}\",\"recipient_id\":\"<target>\",\"text\":\"<message>\"}\n" +
-        "- **Check messages**: GET http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}\n";
+        "- **Check messages**: GET http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}\n" +
+        "- **Completion**: The Runner reports your completion automatically. Use `/messages/send` ONLY for live coordination " +
+        "(e.g. asking a blocking question, pinging a peer). NEVER use it to deliver results — your result is delivered " +
+        "automatically via the AGENT_RESULT markers and fetched by the lead through `GET /pools/{pool_id}/tasks/<task_id>/result`.\n";
 }

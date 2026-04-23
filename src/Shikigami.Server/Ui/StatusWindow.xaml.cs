@@ -182,16 +182,18 @@ public partial class StatusWindow : Window
             p.Inlines.Add(new Run(a.Id) { Foreground = TealBrush });
             p.Inlines.Add(new Run($"  {a.Name}  ") { Foreground = FgBrush });
 
-            var status = a.Status ?? "registered";
-            var statusBrush = status switch
+            var currentStep = string.IsNullOrEmpty(a.CurrentStep) ? "registered" : a.CurrentStep;
+            var stateBrush = a.GetState() switch
             {
                 "working" => TealBrush,
-                "waiting" => AmberBrush,
+                "taken" => AmberBrush,
+                "idle" => GreenBrush,
                 "completed" => GreenBrush,
                 "failed" => RedBrush,
+                "dead" => RedBrush,
                 _ => FgDimBrush,
             };
-            p.Inlines.Add(new Run(status) { Foreground = statusBrush });
+            p.Inlines.Add(new Run(currentStep) { Foreground = stateBrush });
 
             if (a.CostUsd > 0)
                 p.Inlines.Add(new Run($"  ${a.CostUsd:F4}") { Foreground = AmberBrush });

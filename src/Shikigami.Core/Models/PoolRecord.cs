@@ -10,6 +10,7 @@ public sealed class PoolRecord
     public required string Id { get; set; }
     public string Name { get; set; } = "";
     public string Status { get; set; } = "in_progress";
+    public string LeadId { get; set; } = "lead";
     public ConcurrentDictionary<string, PoolAgentInfo> Agents { get; set; } = new();
     public ConcurrentDictionary<string, TaskRecord> Tasks { get; set; } = new();
     public List<string> TaskOrder { get; set; } = new();

@@ -74,7 +74,7 @@ public sealed class McpHttpClient
         {
             prompt_id = promptId,
             name,
-            task = task.Length > 200 ? task[..200] : task,
+            task,
             parent_id = parentId,
             pid,
             agent_type = "shikigami",
@@ -92,11 +92,10 @@ public sealed class McpHttpClient
         if (AgentId != null) await RequestAsync("POST", $"/agents/{AgentId}/unregister");
     }
 
-    public async Task UpdateStateAsync(string status, string? currentStep = null)
+    public async Task UpdateStateAsync(string currentStep)
     {
         if (AgentId == null) return;
-        object data = currentStep != null ? new { status, current_step = currentStep } : new { status };
-        await RequestAsync("PUT", $"/agents/{AgentId}/state", data);
+        await RequestAsync("PUT", $"/agents/{AgentId}/state", new { current_step = currentStep });
     }
 
     public async Task SubmitLogAsync(object cleanContext, string lastOutput)

@@ -285,6 +285,23 @@ public sealed class RunnerSession
     {
         _shuttingDown = true;
         _view.StopHordePoll();
+
+        // If the shikigami wasn't in a terminal state, mark it failed BEFORE kill/unregister
+        // so the server's auto-notify fires and the parent wakes up immediately — no 15s
+        // PidMonitor wait. Only for prompt-mode (task-mode pool agents have their own cleanup).
+        var needsTerminalPut = !_args.TaskMode
+            && _state is not (RunnerState.Completing or RunnerState.Completed
+                              or RunnerState.Idle or RunnerState.Aborted);
+        if (needsTerminalPut)
+        {
+            try
+            {
+                _mcp.UpdateStateAsync("failed: Runner shutdown mid-work")
+                    .Wait(TimeSpan.FromSeconds(1));
+            }
+            catch { }
+        }
+
         // Kill directly — do NOT try graceful Close().
         // claude.cmd (cmd.exe → node.exe): closing stdin makes cmd.exe exit on its own,
         // which orphans node.exe before taskkill /T can kill the process tree.
@@ -310,7 +327,7 @@ public sealed class RunnerSession
         _userStopped = false;
         _view.SetHeaderStatus("working", StatusColor.Teal);
         _view.SetStopButton(true, 1.0);
-        _ = _mcp.UpdateStateAsync("working", $"Turn {_turn}");
+        _ = _mcp.UpdateStateAsync($"working: Turn {_turn}");
     }
 
     private void FinishCliTurn(RunResult result)
@@ -680,7 +697,7 @@ public sealed class RunnerSession
         _view.AppendLog(sep, "sys");
 
         _view.SetHeaderStatus("idle", StatusColor.Green);
-        _ = _mcp.UpdateStateAsync("idle", "Waiting for messages");
+        _ = _mcp.UpdateStateAsync("idle");
 
         _view.EnableInput();
         _view.FocusInput();
@@ -718,7 +735,7 @@ public sealed class RunnerSession
         _view.AppendLog(sep, "sys");
 
         _view.SetHeaderStatus("stopped \u2014 awaiting input", StatusColor.Amber);
-        _ = _mcp.UpdateStateAsync("waiting", "Stopped by user, awaiting correction");
+        _ = _mcp.UpdateStateAsync("taken: Stopped by user, awaiting correction");
 
         _view.EnableInput();
         _view.FocusInput();
@@ -735,7 +752,7 @@ public sealed class RunnerSession
         _view.AppendLog(sep, "sys");
 
         _view.SetHeaderStatus("awaiting input", StatusColor.Amber);
-        _ = _mcp.UpdateStateAsync("waiting", $"USER_INPUT_REQUIRED: {Truncate(question, 100)}");
+        _ = _mcp.UpdateStateAsync($"taken: USER_INPUT_REQUIRED: {question}");
 
         _view.EnableInput();
         _view.FocusInput();
@@ -747,9 +764,6 @@ public sealed class RunnerSession
 
     private static string GetMarkerText(RunResult result) =>
         !string.IsNullOrEmpty(result.ResultText) ? result.ResultText : result.LastTextBlock;
-
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : s[..max] + "...";
 
     private static string FormatTokens(int tokens) =>
         tokens >= 1_000_000 ? $"{tokens / 1_000_000.0:F1}M" : $"{tokens / 1000}k";

@@ -100,7 +100,7 @@ public sealed class LaunchService
         if (err != null) return Error(err);
 
         var poolId = _idGen.NewPoolId();
-        var pool = _poolService.CreatePool(poolId, tasksBatch, poolName);
+        var pool = _poolService.CreatePool(poolId, tasksBatch, poolName, leadId);
 
         var uniqueTypes = tasksBatch
             .Select(t => t["agent_type"].ToString()!)

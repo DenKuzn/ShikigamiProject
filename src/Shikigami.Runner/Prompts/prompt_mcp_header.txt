@@ -10,17 +10,54 @@ Set `recipient_id` to `{lead_id}` (your lead) or another agent's ID. Replace YOU
 printf '{"sender_id":"{agent_id}","recipient_id":"{lead_id}","text":"YOUR_MESSAGE"}' | curl -s -X POST http://127.0.0.1:{port}/messages/send -H "Content-Type: application/json; charset=utf-8" -d @-
 ```
 
-### Check your messages
+### Check your messages (instant, returns immediately)
 ```bash
 curl -s "http://127.0.0.1:{port}/messages/{agent_id}"
 ```
 
-### Discover other agents
-`curl -s http://127.0.0.1:{port}/agents` — returns `[{"id","name","agent_type","task"}]`. Use `id` as `recipient_id`.
+### Long-poll your inbox (PREFERRED — blocks until message arrives)
+```bash
+curl -s "http://127.0.0.1:{port}/messages/{agent_id}/wait?timeout=1800"
+```
+Returns as soon as any message is available (or empty after timeout). Use this INSTEAD of polling in a loop — saves your context window and wakes you the instant something happens.
 
-### Completion report (MANDATORY)
-Before finishing (AGENT_COMPLETED), send a brief report to `{lead_id}` (what was done + problems, under 500 chars). No exceptions.
+### Discover other agents
+`curl -s http://127.0.0.1:{port}/agents` — returns `[{"id","name","agent_type"}]`. Use `id` as `recipient_id`.
+
+### If YOU spawn children (agents or pools)
+The server AUTO-PUSHES events into YOUR inbox when children change state — you do NOT need to poll children individually. Events arrive as regular messages with these text prefixes and JSON payloads:
+- `[child_update] {"child_id","name","current_step"}` — a child agent reached terminal/idle state.
+  - `current_step` is a free-form string. The canonical state token is the prefix before the first `": "` (detail may follow). Tokens:
+    - `completed` — terminal success; fetch the result via `/agents/<child_id>/result`.
+    - `failed` — terminal failure; detail after `": "` is the reason.
+    - `dead` — server detected the child's process is gone.
+    - `idle` — AGENT_IDLE marker, result is ready, fetch via `/agents/<child_id>/result`.
+    - `taken` — a human is in the loop (USER_INPUT_REQUIRED or Stop pressed). The child will NOT resume on its own — move on without it.
+- `[task_update] {"pool_id","task_id","title","status","agent_id"}` — a pool task finished. To read the task result, call `GET /pools/<pool_id>/tasks/<task_id>/result`.
+- `[pool_update] {"pool_id","status","tasks_total","tasks_completed","tasks_failed"}` — the entire pool finished.
+
+Typical pattern when orchestrating children:
+1. Spawn children (via /agents/create or /pools/create).
+2. Long-poll your inbox: `curl -s ".../messages/{agent_id}/wait?timeout=1800"`.
+3. Parse each message: if it starts with `[child_update]` / `[task_update]` / `[pool_update]`, handle the event; otherwise it's a human-style message from another agent.
+4. Fetch full result if needed: `curl -s ".../agents/<child_id>/result"` or `curl -s ".../pools/<pool_id>/tasks/<task_id>/result"`.
+
+### Wait for a specific child (use ONLY if inbox polling isn't enough)
+```bash
+curl -s "http://127.0.0.1:{port}/agents/<child_id>/wait?timeout=1800"
+```
+Returns `{agent_id, current_step}`. Same canonical tokens as above.
+
+### Wait for a pool
+```bash
+curl -s "http://127.0.0.1:{port}/pools/<pool_id>/wait?timeout=1800"
+```
+Returns `{pool_id, pool_status, tasks:[...]}` when the pool reaches a terminal state.
+
+### Completion report
+When you finish (AGENT_COMPLETED / AGENT_IDLE), the Runner automatically reports your state to `{lead_id}` as a `[child_update]` event — your lead is woken up immediately with no effort on your part. The Runner reports your completion automatically. Use `/messages/send` ONLY for live coordination with other agents or the lead (e.g. asking a blocking question, pinging an idle peer). NEVER use it to deliver results — your result is delivered automatically via the AGENT_RESULT markers and fetched by the lead through `/agents/<your_id>/result`.
 
 ### Boundaries
-You CAN: send/check messages, discover agents. You CANNOT: use MCP tools (`mcp__ShikigamiMCP__*`), read other agents' messages, register/unregister agents.
+You CAN: send/check messages, long-poll inbox, discover agents, wait for specific children/pools.
+You CANNOT: use MCP tools (`mcp__ShikigamiMCP__*`), read other agents' inboxes, register/unregister agents.
 PREFER `USER_INPUT_REQUIRED` over messaging for blocking questions — the runner handles re-launch with the answer automatically.

@@ -15,3 +15,6 @@ printf '{"sender_id":"{agent_id}","recipient_id":"<target>","text":"YOUR_MESSAGE
 ```bash
 curl -s "http://127.0.0.1:{port}/pools/{pool_id}/messages/check?agent_id={agent_id}"
 ```
+
+### Completion report
+When you finish a task (TASK_COMPLETED / TASK_FAILED), the Runner automatically reports the task outcome to the pool lead as a `[task_update]` event — no explicit message needed. The Runner reports your completion automatically. Use `/messages/send` ONLY for live coordination with other agents or the lead (e.g. asking a blocking question, pinging an idle peer). NEVER use it to deliver results — your result is delivered automatically via the AGENT_RESULT markers and fetched by the lead through `GET /pools/{pool_id}/tasks/<task_id>/result`.
