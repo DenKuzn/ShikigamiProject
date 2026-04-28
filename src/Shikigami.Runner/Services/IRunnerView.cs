@@ -11,6 +11,11 @@ public interface IRunnerView
     void AppendLog(string text, string tag);
     void AppendCollapsible(string header, string body, string headerTag, string bodyTag = "text");
 
+    // ── Sub-agent block (one expandable block per Task/Agent invocation) ──
+    void BeginSubagentBlock(string id, string header, string headerTag);
+    void AppendToSubagentBlock(string id, string text, string tag);
+    void UpdateSubagentBlockHeader(string id, string newHeader, string headerTag);
+
     // ── Header ──
     void SetHeaderStatus(string text, StatusColor color);
 

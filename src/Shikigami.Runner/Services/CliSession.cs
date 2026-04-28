@@ -206,15 +206,23 @@ public sealed class CliSession : IDisposable
             var etype = evt.TryGetProperty("type", out var tp) ? tp.GetString() : null;
             var ts = DateTime.Now.ToString("HH:mm:ss");
 
+            // parent_tool_use_id at top level: non-empty means this event is from a sub-agent.
+            // RunnerSession routes it to that sub-agent's collapsible block.
+            string GetParentTuid()
+            {
+                if (!evt.TryGetProperty("parent_tool_use_id", out var ptu)) return "";
+                return ptu.ValueKind == JsonValueKind.String ? ptu.GetString() ?? "" : "";
+            }
+
             switch (etype)
             {
                 case "system":
-                    var model = evt.TryGetProperty("model", out var mp) ? mp.GetString() ?? "?" : "?";
-                    result.Events.Add(new() { ["type"] = "system", ["model"] = model, ["time"] = ts });
-                    emit("system", new() { ["model"] = model });
+                    var subtype = evt.TryGetProperty("subtype", out var sp) ? sp.GetString() : null;
+                    HandleSystemSubtype(evt, subtype, ts, emit, result);
                     break;
 
                 case "assistant":
+                    var aParentTuid = GetParentTuid();
                     if (evt.TryGetProperty("message", out var aMsg))
                     {
                         try
@@ -232,24 +240,46 @@ public sealed class CliSession : IDisposable
                                             var name = blk.TryGetProperty("name", out var np) ? np.GetString() ?? "?" : "?";
                                             var detail = ExtractToolDetail(blk, name);
                                             var fullInput = blk.TryGetProperty("input", out var fip) ? fip.ToString() : "";
+                                            var toolUseId = blk.TryGetProperty("id", out var tuidp) ? tuidp.GetString() ?? "" : "";
                                             result.Events.Add(new() { ["type"] = "tool", ["name"] = name, ["detail"] = detail, ["full_input"] = fullInput, ["time"] = ts });
-                                            emit("tool", new() { ["number"] = toolN, ["name"] = name, ["detail"] = detail });
+                                            emit("tool", new()
+                                            {
+                                                ["number"] = toolN,
+                                                ["name"] = name,
+                                                ["detail"] = detail,
+                                                ["tool_use_id"] = toolUseId,
+                                                ["parent_tool_use_id"] = aParentTuid,
+                                            });
                                             break;
                                         case "thinking":
                                             var thinkText = blk.TryGetProperty("thinking", out var thp) ? thp.GetString() ?? "" : "";
                                             result.Events.Add(new() { ["type"] = "thinking", ["text"] = thinkText, ["time"] = ts });
-                                            emit("thinking", new() { ["text"] = thinkText });
+                                            emit("thinking", new()
+                                            {
+                                                ["text"] = thinkText,
+                                                ["parent_tool_use_id"] = aParentTuid,
+                                            });
                                             break;
                                         case "text":
                                             var text = blk.TryGetProperty("text", out var txp) ? txp.GetString()?.Trim() ?? "" : "";
                                             if (!string.IsNullOrEmpty(text))
                                             {
-                                                result.LastTextBlock = text;
-                                                textBlocks.Add(text);
+                                                // Sub-agent text doesn't update the parent's "last text" (used for marker scan).
+                                                if (string.IsNullOrEmpty(aParentTuid))
+                                                {
+                                                    result.LastTextBlock = text;
+                                                    textBlocks.Add(text);
+                                                }
                                                 result.Events.Add(new() { ["type"] = "text", ["text"] = text, ["time"] = ts });
-                                                emit("text", new() { ["text"] = text });
+                                                emit("text", new()
+                                                {
+                                                    ["text"] = text,
+                                                    ["parent_tool_use_id"] = aParentTuid,
+                                                });
 
-                                                if (result.MarkedResult == null && text.Contains("AGENT_RESULT_END"))
+                                                if (string.IsNullOrEmpty(aParentTuid)
+                                                    && result.MarkedResult == null
+                                                    && text.Contains("AGENT_RESULT_END"))
                                                 {
                                                     result.MarkedResult = ExtractMarkedResult(string.Join("\n", textBlocks));
                                                     if (result.MarkedResult != null)
@@ -263,7 +293,9 @@ public sealed class CliSession : IDisposable
                         }
                         catch { /* content processing must not block usage extraction */ }
 
-                        if (aMsg.TryGetProperty("usage", out var usage))
+                        // Usage stats only meaningful from main-agent events; sub-agent usage is
+                        // reported separately in tool_use_result.usage.
+                        if (string.IsNullOrEmpty(aParentTuid) && aMsg.TryGetProperty("usage", out var usage))
                         {
                             var inp = (usage.TryGetProperty("input_tokens", out var it) ? it.GetInt32() : 0)
                                     + (usage.TryGetProperty("cache_creation_input_tokens", out var cc) ? cc.GetInt32() : 0)
@@ -279,10 +311,13 @@ public sealed class CliSession : IDisposable
                     break;
 
                 case "user":
-                    // Tool results — the CLI feeds tool output back internally.
-                    // We observe these for event log but don't need to act on them.
+                    // Tool results from the CLI's tool dispatcher. For sub-agent events
+                    // these are the sub-agent's tool_results; for main-agent events these
+                    // are the parent's. The runner uses parent_tool_use_id to route them.
+                    var uParentTuid = GetParentTuid();
                     if (evt.TryGetProperty("message", out var userMsg)
-                        && userMsg.TryGetProperty("content", out var userContent))
+                        && userMsg.TryGetProperty("content", out var userContent)
+                        && userContent.ValueKind == JsonValueKind.Array)
                     {
                         foreach (var blk in userContent.EnumerateArray())
                         {
@@ -291,7 +326,15 @@ public sealed class CliSession : IDisposable
                             {
                                 var trContent = blk.TryGetProperty("content", out var trc) ? trc.ToString() : "";
                                 var trToolId = blk.TryGetProperty("tool_use_id", out var tid) ? tid.GetString() ?? "" : "";
+                                var trIsError = blk.TryGetProperty("is_error", out var trie) && trie.ValueKind == JsonValueKind.True;
                                 result.Events.Add(new() { ["type"] = "tool_result", ["content"] = trContent, ["tool_use_id"] = trToolId, ["time"] = ts });
+                                emit("tool_result", new()
+                                {
+                                    ["tool_use_id"] = trToolId,
+                                    ["content"] = trContent,
+                                    ["is_error"] = trIsError,
+                                    ["parent_tool_use_id"] = uParentTuid,
+                                });
                             }
                         }
                     }
@@ -440,8 +483,77 @@ public sealed class CliSession : IDisposable
             "Edit" => inp.TryGetProperty("file_path", out var e) ? e.GetString() ?? "" : "",
             "Glob" => inp.TryGetProperty("pattern", out var g) ? g.GetString() ?? "" : "",
             "Grep" => inp.TryGetProperty("pattern", out var gr) ? gr.GetString() ?? "" : "",
+            "Agent" => inp.TryGetProperty("description", out var ad) ? ad.GetString() ?? "" : "",
             _ => "",
         };
+    }
+
+    private static void HandleSystemSubtype(
+        JsonElement evt, string? subtype, string ts,
+        Action<string, Dictionary<string, object>> emit, RunResult result)
+    {
+        switch (subtype)
+        {
+            case "init":
+                var model = evt.TryGetProperty("model", out var mp) ? mp.GetString() ?? "?" : "?";
+                result.Events.Add(new() { ["type"] = "system", ["model"] = model, ["time"] = ts });
+                emit("system", new() { ["model"] = model });
+                break;
+
+            case "task_started":
+            {
+                var toolUseId = evt.TryGetProperty("tool_use_id", out var tu) ? tu.GetString() ?? "" : "";
+                var taskId = evt.TryGetProperty("task_id", out var ti) ? ti.GetString() ?? "" : "";
+                var description = evt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                var taskType = evt.TryGetProperty("task_type", out var tt) ? tt.GetString() ?? "" : "";
+                var prompt = evt.TryGetProperty("prompt", out var p) ? p.GetString() ?? "" : "";
+                emit("subagent_start", new()
+                {
+                    ["tool_use_id"] = toolUseId,
+                    ["task_id"] = taskId,
+                    ["description"] = description,
+                    ["task_type"] = taskType,
+                    ["prompt"] = prompt,
+                });
+                break;
+            }
+
+            case "task_progress":
+            {
+                var toolUseId = evt.TryGetProperty("tool_use_id", out var tu) ? tu.GetString() ?? "" : "";
+                var description = evt.TryGetProperty("description", out var d) ? d.GetString() ?? "" : "";
+                var lastTool = evt.TryGetProperty("last_tool_name", out var lt) ? lt.GetString() ?? "" : "";
+                emit("subagent_progress", new()
+                {
+                    ["tool_use_id"] = toolUseId,
+                    ["description"] = description,
+                    ["last_tool_name"] = lastTool,
+                });
+                break;
+            }
+
+            case "task_notification":
+            {
+                var toolUseId = evt.TryGetProperty("tool_use_id", out var tu) ? tu.GetString() ?? "" : "";
+                var status = evt.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "";
+                var summary = evt.TryGetProperty("summary", out var su) ? su.GetString() ?? "" : "";
+                int durationMs = 0;
+                if (evt.TryGetProperty("usage", out var u)
+                    && u.TryGetProperty("duration_ms", out var dm)
+                    && dm.ValueKind == JsonValueKind.Number)
+                    durationMs = dm.GetInt32();
+                emit("subagent_end", new()
+                {
+                    ["tool_use_id"] = toolUseId,
+                    ["status"] = status,
+                    ["summary"] = summary,
+                    ["duration_ms"] = durationMs,
+                });
+                break;
+            }
+
+            // Other subtypes (status, hook_started, hook_response) are ignored for now.
+        }
     }
 
     private static string FindClaude()

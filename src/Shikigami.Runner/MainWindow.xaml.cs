@@ -29,6 +29,7 @@ public partial class MainWindow : Window, IRunnerView
     private bool _polling;
     private double _logFontSize = 12;
     private readonly List<FrameworkElement> _collapsibleTextBlocks = new();
+    private readonly Dictionary<string, (TextBlock arrow, TextBlock header, StackPanel body)> _subagentBlocks = new();
     private int _closeCountdown;
 
     public MainWindow(AppArgs args)
@@ -186,6 +187,24 @@ public partial class MainWindow : Window, IRunnerView
             e.Handled = true;
         };
 
+        // The body TextBox lives inside a BlockUIContainer of the parent RichTextBox.
+        // Clicking it makes the RichTextBox's TextEditor reposition its caret to the
+        // BlockUIContainer's anchor (effectively position 0) and raise RequestBringIntoView,
+        // which scrolls the outer LogScroller to the top — breaking text selection.
+        // Snapshot the outer offset on entry and restore it after the input pass.
+        void PreserveOuterScroll()
+        {
+            var savedOffset = LogScroller.VerticalOffset;
+            var wasAutoScroll = _autoScroll;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                LogScroller.ScrollToVerticalOffset(savedOffset);
+                _autoScroll = wasAutoScroll;
+            }), DispatcherPriority.Render);
+        }
+        bodyBlock.PreviewMouseLeftButtonDown += (_, _) => PreserveOuterScroll();
+        bodyBlock.GotKeyboardFocus += (_, _) => PreserveOuterScroll();
+
         var container = new StackPanel();
         container.Children.Add(headerPanel);
         container.Children.Add(bodyBlock);
@@ -199,6 +218,114 @@ public partial class MainWindow : Window, IRunnerView
 
         if (_autoScroll)
             LogScroller.ScrollToEnd();
+    }
+
+    public void BeginSubagentBlock(string id, string header, string headerTag)
+    {
+        if (_subagentBlocks.ContainsKey(id)) return;
+
+        var arrowBlock = new TextBlock
+        {
+            Text = "▾ ",
+            Foreground = GetTagBrush(headerTag),
+            FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+            FontSize = _logFontSize,
+        };
+
+        var headerBlock = new TextBlock
+        {
+            Text = header,
+            Foreground = GetTagBrush(headerTag),
+            FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+            FontSize = _logFontSize,
+        };
+
+        var headerPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Cursor = Cursors.Hand,
+            Background = Brushes.Transparent,
+        };
+        headerPanel.Children.Add(arrowBlock);
+        headerPanel.Children.Add(headerBlock);
+
+        // Body is a vertical StackPanel of per-line TextBlocks.
+        // Adding TextBlocks to a StackPanel reliably re-flows the parent BlockUIContainer
+        // (unlike mutating a single TextBox.Text after it's been parented to a FlowDocument).
+        var bodyBlock = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            Visibility = Visibility.Visible,
+            Margin = new Thickness(16, 2, 0, 2),
+        };
+
+        headerPanel.MouseLeftButtonDown += (_, e) =>
+        {
+            if (bodyBlock.Visibility == Visibility.Collapsed)
+            {
+                bodyBlock.Visibility = Visibility.Visible;
+                arrowBlock.Text = "▾ ";
+            }
+            else
+            {
+                bodyBlock.Visibility = Visibility.Collapsed;
+                arrowBlock.Text = "▸ ";
+            }
+            e.Handled = true;
+        };
+
+        var container = new StackPanel();
+        container.Children.Add(headerPanel);
+        container.Children.Add(bodyBlock);
+
+        _collapsibleTextBlocks.Add(arrowBlock);
+        _collapsibleTextBlocks.Add(headerBlock);
+
+        var block = new BlockUIContainer(container) { Margin = new Thickness(0, 1, 0, 1) };
+        LogBox.Document.Blocks.Add(block);
+
+        _subagentBlocks[id] = (arrowBlock, headerBlock, bodyBlock);
+
+        if (_autoScroll)
+            LogScroller.ScrollToEnd();
+    }
+
+    public void AppendToSubagentBlock(string id, string text, string tag)
+    {
+        if (!_subagentBlocks.TryGetValue(id, out var entry))
+        {
+            // Fallback: block missing — surface the text in main log so it isn't lost.
+            AppendLog($"  [orphan sub-agent {id[..Math.Min(8, id.Length)]}] {text}", tag);
+            return;
+        }
+
+        var brush = GetTagBrush(tag);
+        // One TextBlock per logical line — multi-line input gets multiple children.
+        var lines = text.Split(new[] { "\r\n", "\n", "\r" }, System.StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            var lineBlock = new TextBlock
+            {
+                Text = line,
+                Foreground = brush,
+                FontFamily = new FontFamily(DeepSpaceTheme.FontMono),
+                FontSize = _logFontSize,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            entry.body.Children.Add(lineBlock);
+            _collapsibleTextBlocks.Add(lineBlock);
+        }
+
+        if (_autoScroll)
+            LogScroller.ScrollToEnd();
+    }
+
+    public void UpdateSubagentBlockHeader(string id, string newHeader, string headerTag)
+    {
+        if (!_subagentBlocks.TryGetValue(id, out var entry)) return;
+        entry.header.Text = newHeader;
+        entry.header.Foreground = GetTagBrush(headerTag);
+        entry.arrow.Foreground = GetTagBrush(headerTag);
     }
 
     private SolidColorBrush GetTagBrush(string tag) => tag switch

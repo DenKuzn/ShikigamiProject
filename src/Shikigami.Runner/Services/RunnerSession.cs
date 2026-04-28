@@ -405,37 +405,121 @@ public sealed class RunnerSession
 
     private void HandleCliEvent(string type, Dictionary<string, object> data)
     {
+        // parent_tool_use_id non-empty → event came from a sub-agent spawned by Task/Agent.
+        // Route into that sub-agent's collapsible block instead of the main log.
+        var parentTuid = data.TryGetValue("parent_tool_use_id", out var ptv)
+            ? ptv?.ToString() ?? ""
+            : "";
+
         switch (type)
         {
             case "system":
                 _view.AppendLog($"[system] model={data["model"]}", "sys");
                 break;
+
+            case "subagent_start":
+            {
+                var tuid = data["tool_use_id"]?.ToString() ?? "";
+                var desc = data["description"]?.ToString() ?? "";
+                var subagentType = data["task_type"]?.ToString() ?? "";
+                var prompt = data["prompt"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(tuid)) break;
+
+                var typeSuffix = string.IsNullOrEmpty(subagentType) ? "" : $" ({subagentType})";
+                _view.BeginSubagentBlock(tuid, $"⌬ Sub-agent{typeSuffix}: {desc}", "task");
+                if (!string.IsNullOrEmpty(prompt))
+                    _view.AppendToSubagentBlock(tuid, $"prompt: {prompt}", "dim");
+                break;
+            }
+
+            case "subagent_progress":
+            {
+                var tuid = data["tool_use_id"]?.ToString() ?? "";
+                var desc = data["description"]?.ToString() ?? "";
+                var lastTool = data["last_tool_name"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(tuid)) break;
+                var line = string.IsNullOrEmpty(lastTool) ? $"… {desc}" : $"… {desc}  [{lastTool}]";
+                _view.AppendToSubagentBlock(tuid, line, "sys");
+                break;
+            }
+
+            case "subagent_end":
+            {
+                var tuid = data["tool_use_id"]?.ToString() ?? "";
+                var status = data["status"]?.ToString() ?? "";
+                var summary = data["summary"]?.ToString() ?? "";
+                var durObj = data.TryGetValue("duration_ms", out var dv) ? dv : 0;
+                var durationMs = durObj is int di ? di : 0;
+                if (string.IsNullOrEmpty(tuid)) break;
+
+                var statusGlyph = status == "completed" ? "✓" : "✗";
+                var durStr = durationMs > 0 ? $" in {durationMs}ms" : "";
+                var headerTag = status == "completed" ? "result" : "error";
+                _view.UpdateSubagentBlockHeader(tuid,
+                    $"⌬ Sub-agent {statusGlyph} {status}{durStr}: {summary}", headerTag);
+                break;
+            }
+
             case "tool":
                 _toolCount++;
                 _view.SetStat(StatField.Tools, _toolCount.ToString());
-                var name = data["name"];
-                var detail = data.TryGetValue("detail", out var d) ? d : "";
-                _view.AppendLog($"  [{_toolCount}] {name}  {detail}", "tool");
+                var name = data["name"]?.ToString() ?? "?";
+                var detail = data.TryGetValue("detail", out var d) ? d?.ToString() ?? "" : "";
+                var toolLine = $"  [{_toolCount}] {name}  {detail}";
+                if (!string.IsNullOrEmpty(parentTuid))
+                    _view.AppendToSubagentBlock(parentTuid, $"▶ {name}  {detail}", "tool");
+                else
+                    _view.AppendLog(toolLine, "tool");
                 break;
+
+            case "tool_result":
+                // Sub-agent tool_results go inside the block as a brief excerpt so user
+                // can follow what happened. Main-agent tool_results are not shown
+                // (their effect is implicit in the next assistant turn).
+                if (!string.IsNullOrEmpty(parentTuid))
+                {
+                    var content = data["content"]?.ToString() ?? "";
+                    var truncated = content.Length > 200 ? content[..200] + "…" : content;
+                    var isError = data.TryGetValue("is_error", out var iev) && iev is bool b && b;
+                    _view.AppendToSubagentBlock(parentTuid, $"   ← {truncated}", isError ? "error" : "dim");
+                }
+                break;
+
             case "text":
-                _view.AppendLog($"{data["text"]}", "text");
+                var text = data["text"]?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(parentTuid))
+                    _view.AppendToSubagentBlock(parentTuid, text, "text");
+                else
+                    _view.AppendLog(text, "text");
                 break;
+
             case "thinking":
                 var thinkText = data.TryGetValue("text", out var th) ? th?.ToString() ?? "" : "";
-                if (!string.IsNullOrEmpty(thinkText))
+                if (!string.IsNullOrEmpty(parentTuid))
+                {
+                    _view.AppendToSubagentBlock(parentTuid, "(thinking…)", "dim");
+                }
+                else if (!string.IsNullOrEmpty(thinkText))
+                {
                     _view.AppendCollapsible("  (thinking...)", thinkText, "dim", "dim");
+                }
                 else
+                {
                     _view.AppendLog("  (thinking...)", "dim");
+                }
                 break;
+
             case "usage":
                 var inpTok = (int)data["input_tokens"];
                 if (inpTok > 0)
                     _view.SetStat(StatField.Context, FormatTokens(inpTok));
                 break;
+
             case "marked_result":
                 var markedText = data["text"].ToString() ?? "";
                 _ = _mcp.SubmitLogAsync(new List<Dictionary<string, object>>(), markedText);
                 break;
+
             case "error":
                 _view.AppendLog($"  ERROR: {data["message"]}", "error");
                 break;
